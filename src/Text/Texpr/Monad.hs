@@ -59,7 +59,7 @@ satisfy cs = Parse $ \env inp -> case inp.txt of
     t = Atom (fwd inp.loc loc') (c:"")
     loc' = Loc.advance inp.loc [c]
   _ -> unParse (throw explain) env inp -- TODO can I get these explains inlined?
-    where explain = (noReason inp.loc){expectingChars = cs}
+    where explain = (noReason inp.loc){expectingChars = cs} -- WARNING I'm assuming cs is a non-empty set
 
 many :: CharSet -> Parse Texprs
 many cs = Parse $ \_ inp -> case span (`CS.elem` cs) inp.txt of

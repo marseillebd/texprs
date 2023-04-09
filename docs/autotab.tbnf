@@ -1,0 +1,30 @@
+
+> File = File.part (lf File.part)* lf? [] # TODO replace [] with $
+> File.part = (Plain | Table) lf
+
+> Plain = /Plain.line (lf Plain.line)*/
+
+> Plain.line = /space.Leading? Cell? space.Trailing?/
+
+> Table = Row.line (lf Row.line)+
+
+> Row = Cell (space space+ Cell)+
+TODO: Row = Cell (space{2,} -> Cell)+
+> Row.line =
+>   space.Leading?
+>   Row
+>   space.Trailing?
+
+> Cell = /nonSpace (space nonSpace)*/
+TODO: Cell = /nonSpace (space -> nonSpace)*/
+
+> space = ' '
+> lf = '\n'
+> nonSpace = /[^' ''\n']*/
+
+> space.Leading = /space+/
+> space.Trailing = /space+/
+
+
+TODO: for allowing it to work on literate code, try this:
+space.Leading = ... | /'>' space*/

@@ -2,22 +2,8 @@
 Documentation is just any sequence of lines that do not begin with a `>`.
 This will not generate empty documentation, but it does preserve empty lines.
 
-Doc = (doc.line nl? | nl)+
-doc.line =
-  / [^>\n]  # one character on the line that is not `>`
-    [^\n]*  # any other characters on the line
-  /
-
-
-> :ws: = 'a'..'z' - 'j' 
->      | :foo: - "aeiou" # some sruff idk
->
->      | "\n\"\x00" # and that's that
-> 
-> :alpha.lo: = 'a'..'z'
->
-
-
-  sep.by<sep,g> = g (sep g)*
-> sep.by<sep,g> = g # TODO
-> sep.dot<g> = sep.by<'.', g>
+> Doc = (doc.line nl? | nl)+
+> doc.line =
+>   / [^ >'\n' ]   # one character on the line that is not `>`
+>     [^ '\n'  ]*  # any other characters on the line
+>   /

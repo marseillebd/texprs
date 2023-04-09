@@ -3,15 +3,15 @@
 
 module Main where
 
-import Data.List (isPrefixOf,isSuffixOf)
+import Data.List (isPrefixOf,stripPrefix,isSuffixOf)
 import Data.Texpr (Texpr(..),Texprs,unparse)
 import Text.Location (startInput)
 import Text.Texpr.Monad (runPeg)
 import Text.Texpr.Tree (Rule(..),pattern Alt,pattern Seq,pattern Star)
 
-import Data.CharSet as CS
 import Data.Map (Map)
 
+import qualified Data.CharSet as CS
 import qualified Data.Map as Map
 import qualified Text.Texpr.Bootstrap as Bs
 
@@ -22,18 +22,20 @@ main = main2
 
 main2 :: IO ()
 main2 = do
-  selfGrammar <- readFile "docs/tbnf.tbnf"
+  selfGrammar <- readFile "docs/autotab.tbnf"
   let r = runPeg Bs.rules Bs.startRule (startInput selfGrammar)
   case r of
     Right (ts, p) -> do
       putStrLn $ concatMap unparse ts
+      putStrLn "======"
+      print `mapM_` ts
       putStrLn "======"
       print `mapM_` cleanBs ts
       print p
     Left e -> print e
 
 cleanBs :: Texprs -> Texprs
-cleanBs ts0 = fmap remKw $ concatMap remWs ts0
+cleanBs ts0 = fmap simpl $ fmap remKw $ concatMap remWs ts0
   where
   remWs t@(Atom _ _) = [t]
   remWs (Combo _ "Space" _) = []
@@ -52,12 +54,36 @@ cleanBs ts0 = fmap remKw $ concatMap remWs ts0
   remKw (Combo l "CharSet" cs) = Combo l "CharSet" $ remKw <$> (init . tail) cs
   remKw (Combo l "Rule.Def" (name : params : _ : rest)) = Combo l "Rule.Def" $ remKw <$> (name:params:rest)
   remKw (Combo l "Rule.Params" xs) = Combo l "Rule.Params" $ evenElems xs
-  remKw (Combo l "tbnf.Call" xs) = Combo l "Rule.Params" $ remKw <$> oddElems xs
+  remKw (Combo l "Rule" (Atom _ "(" : xs)) = Combo l "Rule" $ remKw <$> init xs
+  remKw (Combo l "Rule.Group" cs) = Combo l "Rule.Group" $ remKw <$> (init . tail) cs
+  remKw (Combo l "Rule.Flat" xs) = Combo l "Rule.Flat" $ remKw <$> (init . tail) xs
+  remKw (Combo l "Rule.Call" xs) = Combo l "Rule.Call" $ remKw <$> oddElems xs
+  remKw (Combo l "Rule.String" cs) = Combo l "Rule.String" $ remKw <$> (init . tail) cs
+  remKw (Combo l "Rule.Sat" (Atom _ x:xs)) = Combo l ctor' $ remKw <$> init xs
+    where ctor' = if x == "[^" then "Rule.Sat.Neg" else "Rule.Sat"
   remKw (Combo l name ts)
     | "Char" `isSuffixOf` name
     , [_, c, _] <- ts = Combo l name [remKw c]
     | otherwise = Combo l name (remKw <$> ts)
   remKw t = t
+  simpl :: Texpr -> Texpr
+  simpl (Combo _ "Rule" [t]) = simpl t
+  simpl (Combo l ctor [t])
+    | Just ctorRest <- stripPrefix "Rule." ctor
+    , ctorRest `elem` ["Term", "Factor", "Group"]
+    = simpl t
+    | otherwise = Combo l ctor [simpl t]
+  simpl t@(Atom _ _) = t
+  simpl (Combo l0 "Rule.String" xs0) = Combo l0 "Rule.String" $ loop xs0
+    where
+    loop [] = []
+    loop (Atom l c : xs) = let (l', cs, xs') = loop2 l c xs in Atom (l <> l') cs : loop xs'
+    loop (x : xs) = x : loop xs
+    loop2 _ acc (Atom l' c : xs) = loop2 l' (acc <> c) xs
+    loop2 l acc xs = (l, acc, xs)
+  simpl (Combo l ctor xs) = Combo l ctor (simpl <$> xs)
+  simpl t = t
+
 
 evenElems :: [a] -> [a]
 evenElems [] = []
