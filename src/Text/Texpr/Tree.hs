@@ -40,11 +40,12 @@ data Rule
   | Alt2 Rule Rule
   | Empty
   | Seq2 Rule Rule
-  | Star Rule
+  | Star2 Rule Rule
   | Ctor String Rule
   | Flat Rule
+  | AsUnit Rule -- ^ if the rule fails, fail as soon as the rule started (i.e. like an `Expect`, but no new error message)
   | Expect String Rule
-  | Fail String
+  --- | Fail String -- TODO probably add a Rule arg so that we can say "not expecting a foo when the rule succeeds
   | Call String [Rule] -- lookup a binding in the current environment and match it
   | Capture String Rule Rule -- i.e. capture string as the text matching Rule₁ and use that binding in Rule₂
   | Replay String -- rather than calling, so we don't have to save an environment
@@ -68,3 +69,9 @@ pattern Seq ts <- (fromSeq -> ts@(_:_:_))
 fromSeq :: Rule -> [Rule]
 fromSeq (Seq2 g1 g2) = fromSeq g1 <> fromSeq g2
 fromSeq g = [g]
+
+pattern Star :: Rule -> Rule
+pattern Star g = Star2 Empty g
+
+pattern Star1 :: Rule -> Rule
+pattern Star1 g = Star2 g Empty

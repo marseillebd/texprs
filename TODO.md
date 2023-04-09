@@ -1,0 +1,31 @@
+# TODO
+
+- alter star: allow a rule in front which can be matched without requiring the rest to be matched
+  - currently, if _anything_ matched under a star, a subsequent error under the same star will be an error
+  - however, I'd like to allow some _subset_ of the sequence to match, and _only then_ will subsequent errors lift out of the star
+- [ ] parser for a language defining PEGs
+  - [x] should be literate by default
+  - [x] define character sets
+  - [ ] define rules
+    - [ ] define Empty
+    - [ ] define other primitives
+    - [ ] define Call/Replay
+    - [ ] define repetition
+    - [ ] define Ctor, Expect
+    - [ ] define alternation
+    - [ ] define grouping, flatten
+    - [ ] define Capture
+    - [ ] define Recover
+- cleanup:
+  - [ ] import control
+  - [ ] documentation
+  - [x] better position type
+  - [x] ErrorReport should be a record
+  - [x] Texpr.Error (and ErrorReport) should carry a "reason", which is just the expected set + position
+- [ ] compiler from a high-level PEG grammar to the core, low-level PEG grammar (`Text.Texpr.Tree`)
+- [ ] Texpr (sequence) rewriter based on simple pattern-matching
+  - [ ] the match/rewrite algorithm
+  - [ ] define a textual grammar for rewriters
+- [?] when erroring, collect a context along with the input so that parsing can be resumed
+- interfaces:
+  - [ ] represent grammars (high- and low-level) as json

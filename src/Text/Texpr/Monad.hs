@@ -1,6 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Text.Texpr.Monad where
 
@@ -11,13 +12,15 @@ import Data.List (isPrefixOf,stripPrefix)
 import Data.Map (Map)
 import Data.Maybe (maybeToList)
 import Data.Set (Set)
-import Data.Texpr (Texprs,Texpr(..),Error(..),Pos(..),flatten,unparse)
+import Data.Texpr (Texprs,Texpr(..),Reason(..),noReason,flatten,unparse)
+import Text.Location (Input(..),Source(..),Position(..),FwdRange,fwd)
 import Text.Texpr.Tree (Rule(..))
 
 import qualified Data.CharSet as CS
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Texpr as Texpr
+import qualified Text.Location as Loc
 
 runPeg :: Map String ([String], Rule) -> Rule -> Input -> Either ErrorReport (Texprs, Input)
 runPeg ruleSet startRule inp0 = case go of
@@ -38,85 +41,99 @@ parse = \case
   Alt2 g1 g2 -> alternate g1 g2
   Empty -> pure []
   Seq2 g1 g2 -> sequence g1 g2
-  Star g -> star g
+  Star2 g1 g2 -> star g1 g2
   Ctor name g -> ctor name g
   Flat g -> flat g
+  AsUnit g -> asUnit g
   Expect desc g -> expect desc g
-  Fail msg -> fail msg
+  -- Fail msg -> fail msg
   Call f gs -> call f gs
   Capture x g1 g2 -> capture x g1 g2
   Replay x -> replay x
   Recover g1 g2 -> recover g1 g2
 
 satisfy :: CharSet -> Parse Texprs
-satisfy cs = Parse $ \_ inp -> case inp.txt of
-  c:txt' | c `CS.elem` cs -> Right ([t], Input pos' txt')
+satisfy cs = Parse $ \env inp -> case inp.txt of
+  c:txt' | c `CS.elem` cs -> Right ([t], Input loc' txt')
     where
-    t = Atom (Pos inp.pos pos') (c:"")
-    pos' = inp.pos + 1
-  _ -> Left ([], inp, ExpectingCharIn cs)
+    t = Atom (fwd inp.loc loc') (c:"")
+    loc' = Loc.advance inp.loc [c]
+  _ -> unParse (throw explain) env inp -- TODO can I get these explains inlined?
+    where explain = (noReason inp.loc){expectingChars = cs}
 
 many :: CharSet -> Parse Texprs
 many cs = Parse $ \_ inp -> case span (`CS.elem` cs) inp.txt of
-  ("", _) -> Right ([], inp)
-  (ok, txt') -> Right ([t], Input pos' txt')
+  (ok, txt') -> Right ([t], Input loc' txt')
     where
-    t = Atom (Pos inp.pos pos') ok
-    pos' = inp.pos + length ok
+    t = Atom (fwd inp.loc loc') ok
+    loc' = Loc.advance inp.loc ok
 
 string :: String -> Parse Texprs
-string "" = pure []
-string str = Parse $ \_ inp -> case stripPrefix str inp.txt of
-  Just txt' -> Right ([t], Input pos' txt')
+string str = Parse $ \env inp -> case stripPrefix str inp.txt of
+  Just txt' -> Right ([t], Input loc' txt')
     where
-    t = Atom (Pos inp.pos pos') str
-    pos' = inp.pos + length str
-  Nothing -> Left ([], inp, ExpectingString str)
+    t = Atom (fwd inp.loc loc') str
+    loc' = Loc.advance inp.loc str
+  Nothing -> unParse (throw explain) env inp
+    where explain = (noReason inp.loc){expectingKeywords = Set.singleton str}
 
 void :: Parse Texprs
-void = Parse $ \_ inp -> case inp.txt of
+void = Parse $ \env inp -> case inp.txt of
   "" -> Right ([], inp)
-  _ -> Left ([], inp, ExpectingNothing)
+  _ -> unParse (throw explain) env inp
+    where explain = (noReason inp.loc){expectingEndOfInput = True}
 
 alternate :: Rule -> Rule -> Parse Texprs
 alternate g1 g2 = do
   catch (parse g1) >>= \case
     Right ok -> pure ok
-    Left err1@(_, inp1, _) -> parse g2 `mapErr` \err2@(_, inp2, _) ->
-      if inp1.pos < inp2.pos then err2 else err1
+    Left err1 -> parse g2 `mapErr` (err1 <>)
 
 sequence :: Rule -> Rule -> Parse Texprs
 sequence g1 g2 = do
   ts1 <- parse g1
-  ts2 <- parse g2 `mapErr` \(ts2, errPos, err) -> (ts1 <> ts2, errPos, err)
+  ts2 <- parse g2 `mapErr` \err -> err{prior = ts1 <> err.prior}
   pure $ ts1 <> ts2
 
-star :: Rule -> Parse Texprs
-star g = catch (parse g) >>= \case
-  Left _ -> pure []
-  Right [] -> pure [] -- to prevent infinite loops when the repeated grammar accepts empty
-  Right ts -> (ts <>) <$> star g
+star :: Rule -> Rule -> Parse Texprs
+star g1 g2 = do
+  inp0 <- getInput
+  catch (parse g1) >>= \case
+    Left _ -> pure []
+    Right ts1 -> catch (parse g2) >>= \case
+      Left err
+        -- WARNING wow, this is the one place I use setInput, and I just find it gross
+        | null err.prior -> setInput inp0 >> pure []
+        | otherwise -> rethrow err{prior = ts1 <> err.prior}
+      Right ((ts1 <>) -> ts)
+        | null ts -> pure [] -- to prevent infinite loops when the repeated grammar accepts empty
+        | otherwise -> (ts <>) <$> mapErr (star g1 g2) (\err -> err{prior = ts <> err.prior})
 
 ctor :: String -> Rule -> Parse Texprs
 ctor name g = do
-  p <- getPosition
-  ts <- parse g
-  pure [Combo name p ts]
+  (r, ts) <- withRange $ parse g
+  pure [Combo r name ts]
 
 flat :: Rule -> Parse Texprs
 flat g = do
   ts <- parse g
   pure $ maybeToList (flatten ts)
 
+asUnit :: Rule -> Parse Texprs
+asUnit g = parse g `mapErr` \err -> err{prior = []}
+
 expect :: String -> Rule -> Parse Texprs
 expect desc g = do
   inp0 <- getInput
-  parse g `mapErr` \(_, Input pos' _, err) ->
-    let txt' = take (pos' - inp0.pos) inp0.txt
-     in ([], inp0, ExpectingName desc (pos', txt') err)
+  parse g `mapErr` \err -> Err
+    { prior = []
+    , remaining = inp0
+    , reason = (noReason inp0.loc)
+                    {expectingByName = Map.singleton desc err.reason}
+    }
 
-fail :: String -> Parse Texprs
-fail msg = Parse $ \_ inp -> Left ([], inp, CustomError msg)
+-- fail :: String -> Parse Texprs
+-- fail msg = Parse $ \_ inp -> Left ([], inp, CustomError msg)
 
 call :: String -> [Rule] -> Parse Texprs
 call f args = lookupLocal f >>= \case
@@ -139,11 +156,15 @@ subst = \case
   Alt2 g1 g2 -> Alt2 <$> subst g1 <*> subst g2
   Empty -> pure Empty
   Seq2 g1 g2 -> Seq2 <$> subst g1 <*> subst g2
-  Star g -> Star <$> subst g
+  Star2 g1 g2 -> Star2 <$> subst g1 <*> subst g2
   Ctor name g -> Ctor name <$> subst g
   Flat g -> Flat <$> subst g
+  AsUnit g -> AsUnit <$> subst g
   Expect desc g -> Expect desc <$> subst g
-  Fail msg -> pure $ Fail msg
+  -- Fail msg -> pure $ Fail msg
+  Call f [] -> lookupLocal f >>= \case
+    Just g -> pure g
+    Nothing -> pure $ Call f []
   Call f gs -> Call f <$> mapM subst gs
   Capture x g1 g2 -> Capture x <$> subst g1 <*> subst g2
   Replay x -> lookupCapture x >>= \case
@@ -155,7 +176,7 @@ capture :: String -> Rule -> Rule -> Parse Texprs
 capture x g1 g2 = do
   ts1 <- parse g1
   let action' = withCapture x (unparse `concatMap` ts1) (parse g2)
-  ts2 <- action' `mapErr` \(ts2, errPos, err) -> (ts1 <> ts2, errPos, err)
+  ts2 <- action' `mapErr` \err -> err{prior = ts1 <> err.prior}
   pure $ ts1 <> ts2
 
 replay :: String -> Parse Texprs
@@ -167,16 +188,26 @@ recover :: Rule -> Rule -> Parse Texprs
 recover g1 g2 = catch (parse g1) >>= \case
   Right ts1 -> catch (parse g2) >>= \case
     Right ts2 -> pure $ ts1 <> ts2
-    Left err@(ts2, errInp, msg) -> do
+    Left err -> do
       (preErr, skip) <- performSkip err g2
       catch (parse g2) >>= \case
-        Right ts2' -> pure $ ts1 <> ts2 <> [Error preErr msg skip] <> ts2'
-        Left _ -> rethrow (ts1 <> ts2, errInp, msg)
-  Left err@(ts1, _, msg) -> do
+        Right ts2' -> pure $ ts1 <> err.prior <> [Error preErr err.reason skip] <> ts2'
+        Left _ -> rethrow err{prior = ts1 <> err.prior}
+  Left err -> do
     (preErr, skip) <- performSkip err g2
     catch (parse g2) >>= \case
-      Right ts2 -> pure $ ts1 <> [Error preErr msg skip] <> ts2
+      Right ts2 -> pure $ err.prior <> [Error preErr err.reason skip] <> ts2
       Left _ -> rethrow err
+
+performSkip :: ErrorReport -> Rule -> Parse (Source, Source)
+performSkip err g = Parse $ \env inp ->
+  let tsLoc = if null err.prior then inp.loc else Texpr.end (last err.prior)
+      remaining' = advanceTo (next g env) err.remaining
+   in Right ( ( Loc.slice inp (fwd tsLoc err.remaining.loc)
+              , Loc.slice err.remaining (fwd err.remaining.loc remaining'.loc)
+              )
+            , remaining'
+            )
 
 ------ The Monad ------
 
@@ -189,13 +220,18 @@ data Env = Env
   }
   deriving (Show)
 
-data Input = Input
-  { pos :: {-# UNPACK #-} !Int -- ^ number of characters consumed so far
-  , txt :: !String
+data ErrorReport = Err
+  { prior :: Texprs
+  , reason :: Reason
+  , remaining :: Input
   }
   deriving (Show)
 
-type ErrorReport = (Texprs, Input, Error)
+instance Semigroup ErrorReport where
+  a <> b = case a.remaining.loc `compare` b.remaining.loc of
+    GT -> a
+    EQ -> a{reason = a.reason <> b.reason}
+    LT -> b
 
 instance Functor Parse where
   fmap f (Parse action) = Parse $ \env inp -> case action env inp of
@@ -215,8 +251,9 @@ instance Monad Parse where
     Right (x, inp') -> unParse (k x) env inp'
     Left err -> Left err
 
-throw :: Error -> Parse a
-throw err = Parse $ \_ inp -> Left ([], inp, err)
+throw :: Reason -> Parse a
+throw reason = Parse $ \_ remaining -> Left $
+  Err { prior = [], reason, remaining }
 
 rethrow :: ErrorReport -> Parse a
 rethrow err = Parse $ \_ _ -> Left err
@@ -234,8 +271,18 @@ mapErr action f = Parse $ \env inp -> case unParse action env inp of
 getInput :: Parse Input
 getInput = Parse $ \_ inp -> Right (inp, inp)
 
-getPosition :: Parse Int
-getPosition = Parse $ \_ inp -> Right (inp.pos, inp)
+setInput :: Input -> Parse ()
+setInput inp = Parse $ \_ _ -> Right ((), inp)
+
+getPosition :: Parse Position
+getPosition = Parse $ \_ inp -> Right (inp.loc, inp)
+
+withRange :: Parse a -> Parse (FwdRange, a)
+withRange action = do
+  p0 <- getPosition
+  x <- action
+  p' <- getPosition
+  pure (fwd p0 p', x)
 
 withCall :: Map String Rule -> Parse a -> Parse a
 withCall local action = Parse $ \env inp -> unParse action env{local,captures=Map.empty} inp
@@ -307,11 +354,12 @@ next = \case
   Seq2 g1 g2 -> \env ->
     let n1 = next g1 env
      in if n1.acceptEmpty then n1 <> next g2 env else n1
-  Star g -> \env -> (next g env){acceptEmpty = True}
+  Star2 g1 g2 -> \env -> (next (Seq2 g1 g2) env){acceptEmpty = True}
   Ctor _ g -> next g
   Flat g -> next g
+  AsUnit g -> next g
   Expect _ g -> next g
-  Fail _ -> const mempty
+  -- Fail _ -> const mempty
   Call name args -> \env -> case Map.lookup name env.local of
     Just g -> next g env
     Nothing -> case Map.lookup name env.global of
@@ -325,27 +373,18 @@ next = \case
     Nothing -> mempty
   Recover g1 g2 -> next (Seq2 g1 g2)
 
-performSkip :: ErrorReport -> Rule -> Parse ((Pos, String), (Pos, String))
-performSkip (ts, errInp, _) g = Parse $ \env inp ->
-  let tsPos = if null ts then inp.pos else Texpr.end (last ts)
-      Input errPos errTxt = errInp
-      errInp'@(Input errPos' _) = advanceTo (next g env) errInp
-   in Right ( ( (Pos tsPos errPos, take (errPos - tsPos) $ drop (tsPos - inp.pos) inp.txt)
-              , (Pos errPos errPos', take (errPos' - errPos) errTxt)
-              )
-            , errInp'
-            )
-
 advanceTo :: Next -> Input -> Input
 advanceTo n inp0
   | n.acceptEmpty = inp0
   | otherwise = loop inp0
   where
+  loop :: Input -> Input
   loop inp = case break (`CS.elem` nextChar n) inp.txt of
-    (skip, "") -> inp' (length skip) ""
+    (skip, "") -> inp' skip ""
     (skip, txt'@(c:rest))
-      | c `CS.elem` n.expectChars -> inp' (length skip) txt'
-      | (`isPrefixOf` txt') `any` (nextStrings n) -> inp' (length skip) txt'
-      | otherwise -> loop (inp' (length skip + 1) rest)
+      | c `CS.elem` n.expectChars -> inp' skip txt'
+      | (`isPrefixOf` txt') `any` (nextStrings n) -> inp' skip txt'
+      | otherwise -> loop (inp' (skip <> [c]) rest)
     where
-    inp' len txt = Input (inp.pos + len) txt
+    inp' :: String -> String -> Input
+    inp' skip rest = Input (inp.loc `Loc.advance` skip) rest

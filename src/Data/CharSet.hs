@@ -12,16 +12,22 @@ module Data.CharSet
   , fromFunction
   -- combination
   , union
+  , complement
+  , minus
   -- query
   , elem
+  -- inspection
+  , null
   -- conversion
   , render
   ) where
 
-import Prelude hiding (any,elem)
+import Prelude hiding (any,elem,null)
 
 import Data.Char (chr,ord)
 import Data.List (intercalate)
+
+import qualified Prelude
 
 data CharRange = CR
   { lo :: {-# UNPACK #-} !Char
@@ -76,6 +82,39 @@ union (CS a0) (CS b0) = CS $ merge a0 b0
     -- ranges overlap
     | otherwise = CR (min rA.lo rB.lo) (max rA.hi rB.hi) : merge a b
 
+complement :: CharSet -> CharSet
+complement cs = any `minus` cs
+
+minus :: CharSet -> CharSet -> CharSet
+minus (CS a0) (CS b0) = CS $ merge a0 b0
+  where
+  merge [] [] = []
+  merge a [] = a
+  merge [] _ = []
+  merge (rA : a) (rB : b)
+    -- range A is strictly less than range B
+    | rA.hi < rB.lo = rA : merge a (rB : b)
+    -- range B is strictly less than range A
+    | rB.hi < rA.lo = merge (rA : a) b
+    -- ranges overlap
+    | otherwise = merge (sub rA rB <> a) (rB : b)
+  sub a b
+    -- normalize B so that is does not extend outside a
+    | b.lo < a.lo = sub a b{lo = a.lo}
+    | a.hi < b.hi = sub a b{hi = a.hi}
+    -- A is a subset of B
+    | a == b = []
+    -- B covers a lower part of A
+    | a.lo == b.lo && b.hi < a.hi = [CR (chr $ ord b.hi + 1) a.hi]
+    -- B covers a upper part of A
+    | a.lo < b.lo && b.hi == a.hi = [CR a.lo (chr $ ord b.lo - 1)]
+    -- B covers a middle part of A
+    | otherwise =
+      [ CR a.lo (chr $ ord b.lo - 1)
+      , CR (chr $ ord b.hi + 1) a.hi
+      ]
+
+
 elem :: Char -> CharSet -> Bool
 elem c (CS rs0) = loop rs0
   where
@@ -83,6 +122,9 @@ elem c (CS rs0) = loop rs0
   loop (r : rs)
     | r.lo <= c && c <= r.hi = True
     | otherwise = loop rs
+
+null :: CharSet -> Bool
+null (CS rs) = Prelude.null rs
 
 render :: CharSet -> String
 render (CS rs) = intercalate "," (renderRange <$> rs)

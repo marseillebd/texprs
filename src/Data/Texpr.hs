@@ -1,8 +1,17 @@
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedRecordDot #-}
+
 module Data.Texpr where
 
 import Data.CharSet (CharSet)
+import Data.List (intercalate)
+import Data.Map (Map)
+import Data.Set (Set)
+import Text.Location (Source(..),Position,FwdRange,fwd)
 
-import qualified Data.CharSet as CharSet
+import qualified Data.CharSet as CS
+import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 -- for "term-expressions", which are s-expressions with string atoms, where combinations are always tagged with an explicit constructor (also a string)
 -- or perhaps "text-expressions", as they hold only text
@@ -11,73 +20,91 @@ import qualified Data.CharSet as CharSet
 -- or cheekily, because s++ would be t
 type Texprs = [Texpr]
 data Texpr
-  = Atom {-# UNPACK #-} !Pos String -- should never be empty
-  | Combo String Int Texprs
-  | Error (Pos, String) Error (Pos, String) -- text before error, error that was caught, and skipped input
+  = Atom {-# UNPACK #-} !FwdRange String
+  | Combo FwdRange String Texprs
+  | Error Source Reason Source -- text before error, error that was caught, and skipped input
 
-instance Show Texpr where
-  show (Atom _ str) = show str
-  show (Combo name _ children) = concat ["(", name, concatMap (' ':) $ show <$> children, ")"]
-  show (Error (_, preErr) err (_, skip)) = concat
-    [ "!{"
-    , if null preErr then "" else show preErr <> " "
-    , "(" <> showErr err <> ")"
-    , if null skip then "" else " " <> show skip
-    , "}"
-    ]
-showErr :: Error -> String
-showErr err = case err of
-  ExpectingNothing -> "ExpectingEnd"
-  ExpectingCharIn cs -> "ExpectingChar " <> show (CharSet.render cs)
-  ExpectingString txt -> "ExpectingString " <> show txt
-  ExpectingName name (_, txt') err' -> concat
-    [ "Expecting "
-    , show name
-    , " ("
-    , if null txt' then "" else show txt' <> " "
-    , showErr err'
-    , ")"
-    ]
-  CustomError msg -> "Error " <> show msg
+start :: Texpr -> Position
+start (Atom r _) = r.anchor
+start (Combo r _ _) = r.anchor
+start (Error preErr _ _) = preErr.loc.anchor
+end :: Texpr -> Position
+end (Atom r _) = r.position
+end (Combo r _ _) = r.position
+end (Error _ _ skip) = skip.loc.position
 
-data Pos = Pos
-  {-# UNPACK #-} !Int -- ^ start
-  {-# UNPACK #-} !Int -- ^ end
-  deriving (Show)
+range :: Texpr -> FwdRange
+range t = fwd (start t) (end t)
 
-data Error
-  = ExpectingNothing
-  | ExpectingCharIn CharSet
-  | ExpectingString String
-  | ExpectingName String (Int, String) Error -- includes internal error
-  | CustomError String
-  deriving (Show)
-
-start :: Texpr -> Int
-start (Atom (Pos pos _) _) = pos
-start (Combo _ pos []) = pos
-start (Combo _ _ ts) = start $ head ts
-start (Error (Pos pos _, _) _ _) = pos
-end :: Texpr -> Int
-end (Atom (Pos _ pos) _) = pos
-end (Combo _ pos []) = pos
-end (Combo _ _ ts) = end $ last ts
-end (Error _ _ (Pos _ pos, _)) = pos
-
-range :: Texpr -> Pos
-range t = Pos (start t) (end t)
-
-flatten :: [Texpr] -> Maybe Texpr
+flatten :: [Texpr] -> Maybe Texpr -- TODO check uses of this to ensure I'm not dropping useful things
 flatten [] = Nothing
-flatten ts0 = Just . Atom pos0 . goList $ ts0
+flatten ts0 = Just . Atom p . goList $ ts0
   where
-  pos0 = Pos (start $ head ts0) (end $ last ts0)
+  p = fwd (start $ head ts0) (end $ last ts0)
   goList ts = concat $ goTree <$> ts
-  goTree (Atom _ txt) = txt
+  goTree (Atom _ str) = str
   goTree (Combo _ _ ts) = goList ts
   goTree (Error _ _ _) = []
 
 unparse :: Texpr -> String
-unparse (Atom _ txt) = txt
+unparse (Atom _ str) = str
 unparse (Combo _ _ ts) = concat (unparse <$> ts)
-unparse (Error (_, preErr) _ (_, skip)) = preErr <> skip
+unparse (Error preErr _ skip) = preErr.txt <> skip.txt
+
+------------------ Errors ------------------
+
+data Reason = Reason
+  { expectAt :: Position
+  , expectingEndOfInput :: Bool
+  , expectingChars :: CharSet
+  , expectingKeywords :: Set String
+  , expectingByName :: Map String Reason
+  }
+
+noReason :: Position -> Reason
+noReason expectAt = Reason
+  { expectAt
+  , expectingEndOfInput = False
+  , expectingChars = CS.empty
+  , expectingKeywords = Set.empty
+  , expectingByName = Map.empty
+  }
+
+instance Semigroup Reason where
+  a <> b = case a.expectAt `compare` b.expectAt of
+    GT -> a
+    EQ -> Reason
+      { expectAt = a.expectAt
+      , expectingEndOfInput = a.expectingEndOfInput || b.expectingEndOfInput
+      , expectingChars = a.expectingChars <> b.expectingChars
+      , expectingKeywords = a.expectingKeywords <> b.expectingKeywords
+      , expectingByName = Map.unionWith (<>) a.expectingByName b.expectingByName
+      }
+    LT -> b
+
+------------------ Rendering ------------------
+
+instance Show Texpr where
+  show (Atom _ str) = show str
+  show (Combo _ name children) = concat ["(", name, concatMap (' ':) $ show <$> children, ")"]
+  show (Error preErr err skip) = concat
+    [ "!{"
+    , if null preErr.txt then "" else show preErr.txt <> " "
+    , "(" <> show err <> ")" -- TODO use a more s-expr-oriented renderer
+    , if null skip.txt then "" else " " <> show skip.txt
+    , "}"
+    ]
+
+instance Show Reason where
+  show r = concat
+    [ "(noReason "
+    , show r.expectAt
+    , "){"
+    , intercalate "," $ concat
+      [ if r.expectingEndOfInput then ["expectingEndOfInput=True"] else []
+      , if CS.null r.expectingChars then [] else ["expectingChars=" <> show r.expectingChars]
+      , if Set.null r.expectingKeywords then [] else ["expectingKeywords=" <> show r.expectingKeywords]
+      , if Map.null r.expectingByName then [] else ["expectingByName=" <> show r.expectingByName]
+      ]
+    , "}"
+    ]

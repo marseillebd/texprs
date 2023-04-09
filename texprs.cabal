@@ -21,7 +21,9 @@ library
   hs-source-dirs: src
   exposed-modules:
     Data.CharSet
+    Text.Location
     Data.Texpr
+    Text.Texpr.Bootstrap
     Text.Texpr.Compile
     Text.Texpr.Define
     Text.Texpr.Monad
@@ -41,6 +43,7 @@ executable texprs
   build-depends:
     , base
     , containers
+    , pretty-simple
     , texprs
   default-language: Haskell2010
   ghc-options: -Wall -O2 -threaded -Wunticked-promoted-constructors
