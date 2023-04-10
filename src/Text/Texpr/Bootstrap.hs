@@ -19,14 +19,14 @@ startRule = Seq -- TODO
       [ Call "BirdFoot" []
       , Alt
         [ Call "Rule.Def" []
-        , Call "DefClass" []
+        , Call "Class.Def" []
         ]
       , opt $ Call "ws" []
-      , Alt [ Call "Nl" [], Void ]
+      , Alt [ Call "Nl" [], End ]
       ]
     , Call "blank" []
     ]
-  -- , Void
+  , End
   ]
 
 rules :: Map String ([String], Rule)
@@ -35,41 +35,43 @@ rules = Map.fromList
   , ("Doc.line", ([], doc_line_))
   , ("Rule.Def", ([], rule_def))
   , ("Rule.name", ([], rule_name_))
-  , ("Rule.Params", ([], rule_params))
-  , ("Rule.Params.name", ([], rule_params_name_))
-  , ("Rule.Group", (["flat.in"], rule_group))
+  , ("Rule.name.lower", ([], rule_name_lower_))
+  , ("Rule.Parametric", ([], rule_parametric))
+  , ("Rule.Group", ([], rule_group))
   , ("Rule", (["flat.in"], rule))
   , ("Rule.Term", (["flat.in"], rule_term))
   , ("Rule.Factor", (["flat.in"], rule_factor))
   , ("Rule.Rep", (["flat.in"], rule_rep))
+  , ("Rule.Rep.Amount", ([], rule_rep_range))
+  , ("Rule.Commit", ([], rule_commit))
   , ("Rule.prim", (["flat.in"], rule_prim_))
   , ("Rule.Sat", ([], rule_sat))
   , ("Rule.Char", ([], rule_char))
   , ("Rule.String", ([], rule_string))
   , ("Rule.Call", ([], rule_call))
   , ("Rule.Flat", ([], rule_flat))
-  -- TODO below _might_ not be kept
-  , ("DefClass", ([], defClass))
-  , ("class.body", ([], class_body_))
-  , ("class.term", ([], class_term_))
-  , ("class.operator", ([], class_operator_))
-  , ("ClassVar", ([], classVar))
-  , ("className", ([], className_))
+  , ("Class.Def", ([], classDef))
+  , ("Class.body", ([], class_body_))
+  , ("Class.Var", ([], class_var))
+  , ("Class.name", ([], class_name_))
+  , ("Class.term", ([], class_term_))
+  , ("Class.operator", ([], class_operator_))
   , ("Char", ([], char))
-  , ("CharRange", ([], charRange))
-  , ("CharSet", ([], charSet))
-  , ("sqChar", ([], sqChar_))
-  , ("dq.chars", ([], dq_chars_))
-  , ("EscapeSeq", ([], escapeSeq))
+  , ("Char.Range", ([], char_range))
+  , ("Char.Set", ([], char_set))
+  , ("char.sq", ([], char_sq_))
+  , ("chars.dq", ([], chars_dq_))
+  , ("char.Escape", ([], char_escape))
+  , ("num.nat", ([], num_nat_))
+  , ("Space", ([], space))
+  , ("Nl", ([], nl))
+  , ("BirdFoot", ([], birdFoot))
+  , ("BirdFoot.Improper", ([], birdFoot_improper))
+  , ("Comment", ([], comment))
   , ("sep.by", sep_by_)
   , ("sep.dot", sep_dot_)
   , ("ws", ([], ws_))
   , ("blank", ([], blank_))
-  , ("Space", ([], space))
-  , ("BirdFoot", ([], birdFoot))
-  , ("BirdFoot.Improper", ([], birdFoot_improper))
-  , ("Nl", ([], nl))
-  , ("Comment", ([], comment))
   ]
 
 ------ Literate Documentation ------
@@ -89,21 +91,26 @@ doc_line_ = Flat $ Seq
 
 rule_def :: Rule
 rule_def = Ctor "Rule.Def" $ Seq
-  [ Call "Rule.name" []
-  , Call "Rule.Params" []
+  [ Alt
+    [ Call "Rule.Parametric" []
+    , Call "Rule.name" []
+    ]
   , Call "ws" []
   , Str "="
   , Call "ws" []
   , Call "Rule" [Call "Rule.Flat" []]
   ]
 
-rule_params :: Rule
-rule_params = Ctor "Rule.Params" $ opt $ Seq
-  [ Str "<"
+rule_parametric :: Rule
+rule_parametric = Ctor "Rule.Parametric" $ Seq
+  [ Call "Rule.name" []
+  , Str "<"
+  , opt $ Call "ws" []
   , Call "sep.by"
     [ Seq [ Str ",", opt $ Call "ws" [] ]
-    , Call "Rule.Params.name" []
+    , Call "Rule.name.lower" []
     ]
+  , opt $ Call "ws" []
   , Str ">"
   ]
 
@@ -130,18 +137,60 @@ rule_factor = Ctor "Rule.Factor" $ Alt
   ]
 
 rule_rep :: Rule
-rule_rep = Ctor "Rule.Rep" $ Seq
-  [ Call "Rule.prim" [Call "flat.in" []]
-  , Sat $ CS.oneOf "*+?"
+rule_rep = Ctor "Rule.Rep" $ Alt
+  [ Seq
+    [ Call "Rule.Commit" []
+    , Sat (CS.oneOf "*+") `Alt2` Call "Rule.Rep.Amount" []
+    ]
+  , Seq
+    [ Call "Rule.prim" [Call "flat.in" []]
+    , Sat (CS.oneOf "*+?") `Alt2` Call "Rule.Rep.Amount" []
+    ]
+  ]
+
+rule_rep_range :: Rule
+rule_rep_range = Ctor "Rule.Rep.Amount" $ Alt
+  [ Seq
+    [ Str "{"
+    , opt $ Call "ws" []
+    , opt $ Call "num.nat" []
+    , opt $ Call "ws" []
+    , Str ","
+    , opt $ Call "ws" []
+    , opt $ Call "num.nat" []
+    , opt $ Call "ws" []
+    , Str "}"
+    ]
+  , Seq
+    [ Str "{"
+    , opt $ Call "ws" []
+    , Call "num.nat" []
+    , opt $ Call "ws" []
+    , Str "}"
+    ]
+  ]
+
+rule_commit :: Rule
+rule_commit = Ctor "Rule.Commit" $ Seq
+  [ Str "("
+  , opt $ Call "ws" []
+  , Call "Rule.Term" [Call "Rule.Flat" []]
+  , Call "ws" []
+  , Str "->"
+  , Call "ws" []
+  , Call "Rule.Term" [Call "Rule.Flat" []]
+  , opt $ Call "ws" []
+  , Str ")"
   ]
 
 rule_prim_ :: Rule
 rule_prim_ = Alt
-  [ Call "Rule.Group" [Call "Rule.Flat" []]
+  [ Call "Rule.Group" []
   , Call "Rule.Call" []
   , Call "Rule.Char" []
   , Call "Rule.String" []
   , Call "Rule.Sat" []
+  , Str "$"
   , Call "flat.in" [] -- should be either Rule.Flat or Void; needed to avoid attempting a flatten parse directly inside another flatten, which can happen when there's space before a closing slash
   ]
 
@@ -158,7 +207,7 @@ rule_flat :: Rule
 rule_flat = Ctor "Rule.Flat" $ Seq
   [ Str "/"
   , opt $ Call "ws" []
-  , Call "Rule" [Void]
+  , Call "Rule" [End] -- TODO for now I'm using End, but this should be Void with an appropriate message
   , opt $ Call "ws" []
   , Str "/"
   ]
@@ -167,9 +216,9 @@ rule_sat :: Rule
 rule_sat = Ctor "Rule.Sat" $ Seq
   [ Alt [Str "[^", Str "["]
   , Star $ Alt
-    [ Call "CharRange" []
+    [ Call "Char.Range" []
     , Call "Char" []
-    , Seq [ Str ":", Call "className" [], Str ":" ] -- TODO refactor this sequence, and other locations
+    , Call "Class.Var" []
     , Flat $ Seq [ Sat brackChar, Many brackChar ]
     , Call "ws" []
     ]
@@ -181,14 +230,14 @@ rule_sat = Ctor "Rule.Sat" $ Seq
 rule_char :: Rule
 rule_char = Ctor "Rule.Char" $ Seq
   [ Str "\'"
-  , sqChar_
+  , Call "char.sq" []
   , Str "\'"
   ]
 
 rule_string :: Rule
 rule_string = Ctor "Rule.String" $ Seq
   [ Str "\""
-  , Star $ Call "dq.chars" []
+  , Star $ Call "chars.dq" []
   , Str "\""
   ]
 
@@ -214,8 +263,8 @@ rule_name_ = Flat $
       ]
     ]
 
-rule_params_name_ :: Rule
-rule_params_name_ = Flat $
+rule_name_lower_ :: Rule
+rule_name_lower_ = Flat $
   Call "sep.dot"
     [ Seq
       [ Sat loAlpha
@@ -225,31 +274,31 @@ rule_params_name_ = Flat $
 
 ------ Defining Classes ------
 
-defClass :: Rule
-defClass = Ctor "DefClass" $ Seq
-  [ Str ":", Call "className" [], Str ":"
+classDef :: Rule
+classDef = Ctor "Class.Def" $ Seq
+  [ Call "Class.Var" []
   , Call "ws" []
   , Str "="
   , Call "ws" []
-  , Call "class.body" []
+  , Call "Class.body" []
   ]
 
 class_body_ :: Rule
 class_body_ = Seq
-  [ Call "class.term" []
+  [ Call "Class.term" []
   , Star2 (Call "ws" [])
     $ Seq
-      [ Call "class.operator" []
+      [ Call "Class.operator" []
       , Call "ws" []
-      , Call "class.term" []
+      , Call "Class.term" []
       ]
   ]
 
 class_term_ :: Rule
 class_term_ = Alt
-  [ Expect "class name"        $ Call "ClassVar" []
-  , Expect "set"               $ Call "CharSet" []
-  , Expect "range"             $ Call "CharRange" []
+  [ Expect "class name"        $ Call "Class.Var" []
+  , Expect "set"               $ Call "Char.Set" []
+  , Expect "range"             $ Call "Char.Range" []
   , Expect "character literal" $ Call "Char" []
   ]
 
@@ -259,15 +308,15 @@ class_operator_ = Alt
   , Str "-"
   ]
 
-classVar :: Rule
-classVar = Ctor "ClassVar" $ Seq
+class_var :: Rule
+class_var = Ctor "Class.Var" $ Seq
   [ Str ":"
-  , Call "className" []
+  , Call "Class.name" []
   , Str ":"
   ]
 
-className_ :: Rule
-className_ = Flat $
+class_name_ :: Rule
+class_name_ = Flat $
   Call "sep.dot"
     [ Seq
       [ plus (Sat loAlpha)
@@ -283,45 +332,51 @@ className_ = Flat $
 char :: Rule
 char = Ctor "Char" $ Seq
   [ Str "\'"
-  , Call "sqChar" []
+  , Call "char.sq" []
   , Str "\'"
   ]
 
-charRange :: Rule
-charRange = Ctor "CharRange" $ Seq
-  [ Str "\'", Call "sqChar" [], Str "\'"
+char_range :: Rule
+char_range = Ctor "Char.Range" $ Seq
+  [ Str "\'", Call "char.sq" [], Str "\'"
   , Str ".."
-  , Str "\'", Call "sqChar" [], Str "\'"
+  , Str "\'", Call "char.sq" [], Str "\'"
   ]
 
-charSet :: Rule
-charSet = Ctor "CharSet" $ Seq
+char_set :: Rule
+char_set = Ctor "Char.Set" $ Seq
   [ Str "\""
-  , Star $ Call "dq.chars" []
+  , Star $ Call "chars.dq" []
   , Str "\""
   ]
 
-sqChar_ :: Rule
-sqChar_ = Alt
+char_sq_ :: Rule
+char_sq_ = Alt
   [ Sat sqCharSet
-  , Call "EscapeSeq" []
+  , Call "char.Escape" []
   ]
 sqCharSet :: CharSet
 sqCharSet = CS.contiguous ' ' '~' `CS.minus` CS.oneOf "\'\\"
 
-dq_chars_ :: Rule
-dq_chars_ = Alt
-  [ Many dqCharSet
-  , Call "EscapeSeq" []
+chars_dq_ :: Rule
+chars_dq_ = Alt
+  [ Flat $ Sat dqCharSet `Seq2` Many dqCharSet
+  , Call "char.Escape" []
   ]
 dqCharSet :: CharSet
 dqCharSet = CS.contiguous ' ' '~' `CS.minus` CS.oneOf "\"\\"
 
-escapeSeq :: Rule
-escapeSeq = Ctor "EscapeSeq" $ Alt
+char_escape :: Rule
+char_escape = Ctor "char.Escape" $ Alt
   [ Seq [ Str "\\x", Flat . Seq $ replicate 2 (Sat hexDigit) ]
   , Seq [ Str "\\u", Flat . Seq $ replicate 4 (Sat hexDigit) ]
-  , Seq [ Str "\\U", Flat . Seq $ replicate 6 (Sat hexDigit) ]
+  , Seq
+    [ Str "\\U"
+    , Flat $ Alt
+      [ Seq $ Str "0"  : replicate 5 (Sat hexDigit)
+      , Seq $ Str "10" : replicate 4 (Sat hexDigit)
+      ]
+    ]
   , Flat $ Seq [ Str "\\", Sat cEscapeChar ]
   , Seq [ Str "\\", Sat asciiPrint ]
   ]
@@ -384,6 +439,9 @@ sep_by_ = (["sep", "g"], it)
 sep_dot_ :: ([String], Rule)
 sep_dot_ = (["g"], it)
   where it = Call "sep.by" [Str ".", Call "g" []]
+
+num_nat_ :: Rule
+num_nat_ = Flat $ Sat digit `Seq2` Many digit
 
 ------ Character Sets ------
 

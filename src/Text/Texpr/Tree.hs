@@ -36,6 +36,7 @@ data Rule
   = Sat CharSet
   | Many CharSet -- ^ just an efficient synonym for a flattened sequence of singleton char sets
   | Str String -- ^ just an efficient synonym for a flattened sequence of singleton char sets
+  | End
   | Void
   | Alt2 Rule Rule
   | Empty

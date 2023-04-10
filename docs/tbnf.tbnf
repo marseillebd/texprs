@@ -2,8 +2,10 @@
 Documentation is just any sequence of lines that do not begin with a `>`.
 This will not generate empty documentation, but it does preserve empty lines.
 
-> Doc = (doc.line nl? | nl)+
+> Doc = (doc.line Nl? | Nl)+
 > doc.line =
 >   / [^ >'\n' ]   # one character on the line that is not `>`
 >     [^ '\n'  ]*  # any other characters on the line
 >   /
+
+> Nl = "\n"

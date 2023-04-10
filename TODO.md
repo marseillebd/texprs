@@ -3,14 +3,34 @@
 - alter star: allow a rule in front which can be matched without requiring the rest to be matched
   - currently, if _anything_ matched under a star, a subsequent error under the same star will be an error
   - however, I'd like to allow some _subset_ of the sequence to match, and _only then_ will subsequent errors lift out of the star
-- [ ] test parser: autotab
-  - [ ] define the grammar
-    - [ ] Peg `$`
-    - [ ] Peg `->`
-    - [ ] Peg `{,}`
-  - [ ] compile texprs into a high-level grammar
-  - [ ] compiler from a high-level PEG grammar to the core, low-level PEG grammar (`Text.Texpr.Tree`)
+- cleanup:
+  - [ ] newtypes for restricted strings
+    - [ ] global rule names should begin with a capital letter
+    - [ ] local rule names and captures should begin with a lowercase letter
+    - [ ] instead of inserting `Capture` for rules that have some capitalization, mark it explicitly, but anywhere
+          using `<ctor-name> : <grammar>` syntax that binds more loosely than alt
+  - [ ] import control
+  - [ ] documentation
+  - [ ] if input has not advanced in Star or Many, then the combinator should not recurse
+  - [x] better position type
+  - [x] ErrorReport should be a record
+  - [x] Texpr.Error (and ErrorReport) should carry a "reason", which is just the expected set + position
+- [x] test parser: autotab
+  - [x] define the grammar in haskell
+  - [x] compile texprs into a high-level grammar
+  - [x] compiler from a high-level PEG grammar to the core, low-level PEG grammar (`Text.Texpr.Tree`)
+    - [x] build graph of char class dependencies; strongly connected components indicate circular definitions
+    - [x] eval char classes in reversed breadth-first order
+    - [x] xlate the peg rules to tree rules with an environment:
+          names in scope, whether we are in flatten
+    - [x] test the output of the compiler
+    - [ ] simplify/optimize the rules
+      - [ ] un-nest seq and alt
+      - [ ] patterns for `?` and `+`
   - [ ] test if autotab.tbnf correctly detects tables
+- [ ] texpr rewriter language
+  - [ ] define a textual grammar for rewriters
+  - [ ] the match/rewrite algorithm
 - [ ] parser for a language defining PEGs
   - [x] should be literate by default
   - [x] define character sets
@@ -21,21 +41,11 @@
     - [x] define repetition
     - [x] define alternation
     - [ ] define Not; takes a message and a rule, fails with message when rule matches
-    - [ ] fix Void so it always fails
+    - [ ] fix Void so it always fails; …or elimiate Void altogether …or require an error message for void
     - [x] define grouping, flatten
     - [ ] define Expect
     - [ ] define Capture
     - [ ] define Recover
-- cleanup:
-  - [ ] import control
-  - [ ] documentation
-  - [ ] newtypes for restricted strings
-  - [x] better position type
-  - [x] ErrorReport should be a record
-  - [x] Texpr.Error (and ErrorReport) should carry a "reason", which is just the expected set + position
-- [ ] Texpr (sequence) rewriter based on simple pattern-matching
-  - [ ] the match/rewrite algorithm
-  - [ ] define a textual grammar for rewriters
 - [?] when erroring, collect a context along with the input so that parsing can be resumed
 - interfaces:
   - [ ] represent grammars (high- and low-level) as json

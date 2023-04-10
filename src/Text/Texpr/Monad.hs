@@ -37,6 +37,7 @@ parse = \case
   Sat cs -> satisfy cs
   Many cs -> many cs
   Str str -> string str
+  End -> end
   Void -> void
   Alt2 g1 g2 -> alternate g1 g2
   Empty -> pure []
@@ -77,11 +78,18 @@ string str = Parse $ \env inp -> case stripPrefix str inp.txt of
   Nothing -> unParse (throw explain) env inp
     where explain = (noReason inp.loc){expectingKeywords = Set.singleton str}
 
-void :: Parse Texprs
-void = Parse $ \env inp -> case inp.txt of
+end :: Parse Texprs
+end = Parse $ \env inp -> case inp.txt of
   "" -> Right ([], inp)
   _ -> unParse (throw explain) env inp
     where explain = (noReason inp.loc){expectingEndOfInput = True}
+
+void :: Parse Texprs
+void = errorWithoutStackTrace "TODO: void"
+-- void = Parse $ \env inp -> case inp.txt of
+--   "" -> Right ([], inp)
+--   _ -> unParse (throw explain) env inp
+--     where explain = (noReason inp.loc){expectingEndOfInput = True}
 
 alternate :: Rule -> Rule -> Parse Texprs
 alternate g1 g2 = do
@@ -152,6 +160,7 @@ subst = \case
   Sat cs -> pure $ Sat cs
   Many cs -> pure $ Many cs
   Str txt -> pure $ Str txt
+  End -> pure End
   Void -> pure Void
   Alt2 g1 g2 -> Alt2 <$> subst g1 <*> subst g2
   Empty -> pure Empty
@@ -348,6 +357,7 @@ next = \case
     , expectStrs = Set.singleton str
     , acceptEmpty = False
     }
+  End -> const $ mempty
   Void -> const $ mempty
   Alt2 g1 g2 -> \env -> next g1 env <> next g2 env
   Empty -> const $ mempty{acceptEmpty = True}
