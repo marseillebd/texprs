@@ -10,7 +10,6 @@
 module Text.Texpr.Compile where
 
 import Control.Monad (foldM)
-import Data.Char (isUpper)
 import Data.CharSet (CharSet)
 import Data.Graph (SCC(..),stronglyConnComp)
 import Data.List (find)
@@ -22,8 +21,6 @@ import Text.Texpr.Define (StartDef,RuleDef,ClassDef)
 import qualified Data.CharSet as CS
 import qualified Data.Map as Map
 import qualified Text.Texpr.Tree as Tree
-
--- stronglyConnComp :: Ord key => [(node, key, [key])] -> [SCC node]
 
 data Error
   = CircularClassDefinitions [(FwdRange, String)]
@@ -38,12 +35,12 @@ data Error
   | WrongNumberOfArguments FwdRange Int String Int
   deriving (Show)
 
-compile :: Peg -> Either [Error] (Tree.Rule, Map String ([String], Tree.Rule))
+compile :: Peg -> Either [Error] (Map String ([String], Tree.Rule), Tree.Rule)
 compile peg = do
   clss <- compileClasses peg.classes
   rs <- compileRules clss peg.rules
   s <- compileStart peg.start peg.rules
-  pure (s, rs)
+  pure (rs, s)
 
 ------------------ Start Rule ------------------
 
@@ -72,8 +69,7 @@ compileRules clss gs = do
         let locals = Map.fromList $ (,0) <$> params
             st = st0{arities = locals `Map.union` st0.arities}
         g' <- compileRule st g
-        let ctor = if isUpper (head x) then Tree.Ctor x else id
-        pure $ Map.singleton x (params, ctor g')
+        pure $ Map.singleton x (params, g')
   mergeEithers (go <$> gs)
   where
   getName (_, (r, x, _), _) = (r, x)
@@ -110,6 +106,7 @@ compileRule st = \case
       | length args == ar -> Tree.Call f <$> compileRule st `mapM` args
       | otherwise -> Left [WrongNumberOfArguments loc ar f (length args)]
     Nothing -> Left [UndefinedRule loc f]
+  Ctor _ name g -> Tree.Ctor name <$> compileRule st g
 
 compileRep :: Tree.Rule -> Tree.Rule -> Int -> Maybe Int -> Tree.Rule
 compileRep !g1 !g2 !n0 Nothing = loop n0
@@ -141,7 +138,7 @@ compileClasses clss = do
   () <- checkDuplicateNames getName DuplicateClassDefinitions clss
   let go defd = \case
         CyclicSCC circClss -> Left [CircularClassDefinitions (toError <$> circClss)]
-        AcyclicSCC cls -> compileClass defd cls
+        AcyclicSCC cls -> Map.union defd <$> compileClass defd cls
   foldM go Map.empty (stronglyConnComp $ toVertex <$> clss)
   where
   getName (_, it, _) = it

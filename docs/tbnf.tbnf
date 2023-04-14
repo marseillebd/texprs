@@ -1,11 +1,191 @@
 
+> start = ("" -> top)* $
+> top
+>   = Doc
+>   | birdFoot Def lws* (nl | $)
+>   | vws
+
+## Whitespace, Comments, & Documentation
+
 Documentation is just any sequence of lines that do not begin with a `>`.
 This will not generate empty documentation, but it does preserve empty lines.
 
-> Doc = (doc.line Nl? | Nl)+
-> doc.line =
+> Doc = (doc.line nl? | nl)+
+> doc.line = doc:
 >   / [^ >'\n' ]   # one character on the line that is not `>`
 >     [^ '\n'  ]*  # any other characters on the line
 >   /
 
-> Nl = "\n"
+Tokens are often separated by linear whitespace.
+Do do so, we need not only skip over space characters (not tab),
+  but also skip comments,
+  and go into the next line as long as it is indented.
+This implements a logical notion of whitespace, not merely graphical.
+
+> space = space: /' '+/
+> nl = nl: '\n'
+> comment = comment: '#' /[^'\n']*/
+>
+> birdFoot = bird-foot: '>' ' '
+> birdFoot.improper = bird-foot: '>' '\n'
+>
+> lws = space
+>     | comment
+>     | nl birdFoot.improper* birdFoot lws
+
+Additionally, we will need to skip _vertical_ whitespace.
+This includes lines that are empty (except for a bird foot),
+  and may include space characters and/or a comment.
+As with linear whitespace, this skips _logically_ blank lines
+  rather than merely graphically blank lines.
+
+> vws = birdFoot space* comment? nl
+>     | birdFoot.improper
+
+## Definitions
+
+There are three sorts of definitions in a grammar.
+One is a definition of the start rule,
+  another to define the grammatical rules,
+  and finally one to define character classes.
+
+> Def = Def.Start | Def.Class | Def.Rule
+
+> Def.Start = def-start: "@start" lws+ '=' lws+ Name.rule
+
+TODO global rules are upcase, local rules and captures are locase
+
+> Def.Rule = def-rule: Def.Rule.lhs lws+ '=' lws+ Rule<Rule.Flat>
+> Def.Rule.lhs = rule-parametric:
+>                 Name.rule enclose.angles<sep.comma<Name.param>>
+>              | Name.rule
+
+> Def.Class = def-class: enclose.colon<Name.class> lws+ '=' lws+ Class
+
+## Rule Operators
+
+> Rule<f>
+>   = rule-alt: Rule.Term<f> (lws+ '|' -> lws+ Rule.Term<f>)+
+>   | Rule.Term<f>
+> Rule.Term<f>
+>   = rule-ctor: Name.ctor colon Rule.Seq<f>
+>   | Rule.Seq<f>
+> Rule.Seq<f>
+>   = rule-seq: Rule.Factor<f> (lws+ -> Rule.Factor<f>)+
+>   | Rule.Factor<f>
+> Rule.Factor<f>
+>   = rule-rep: Rule.Rep.commit<f> Rule.Rep.amount
+>   | Rule.Base<f>
+> Rule.Rep.amount
+>   = [*+?]
+>   | rep-custom: enclose.braces<num.nat? comma num.nat?>
+>   | rep-custom: enclose.braces<num.nat>
+> Rule.Rep.commit<f>
+>   = rule-commit: enclose.parens<Rule.Seq.allowFlat lws+ "->" lws+ Rule.Seq.allowFlat>
+>   | Rule.Base<f>
+> Rule.Base<f>
+>   = rule-group: enclose.parens<Rule.allowFlat>
+>   | rule-flat: f
+>   | Rule.prim
+> Rule.Flat = enclose<'/', Rule.disallowFlat, '/'>
+
+> Rule.allowFlat = Rule<Rule.Flat>
+> Rule.Seq.allowFlat = Rule.Seq<Rule.Flat>
+> Rule.disallowFlat = Rule<$> # TODO use `0:"flat rule inside flat"
+
+## Primitive Rules
+
+> Rule.prim
+>   = rule-call: Name.rule enclose.angles<sep.comma<Rule<Rule.Flat>>>?
+>   | rule-char: '\'' char.sq '\''
+>   | rule-string: '\"' chars.dq* '\"'
+>   | rule-sat: ("[^" | '[') Rule.satisfy.part* ']'
+>   | rule-end: '$'
+>   | rule-void: '0' lws* ':' lws* '\"' chars.dq+ '\"'
+
+> Rule.satisfy.part
+>   = sat-range: '\'' char.sq '\'' ".." '\'' char.sq '\''
+>   | sat-char: '\'' char.sq '\''
+>   | sat-var: enclose.colon<Name.class>
+>   | / [:char.brack:]+ /
+>   | lws
+
+## Classes
+
+> Class = Class.term (lws+ Class.operator -> lws+ Class.term)*
+>
+> Class.operator = '|' | '-'
+> Class.term
+>   = class-var: enclose.colon<Name.class>
+>   | class-range: '\'' char.sq '\'' ".." '\'' char.sq '\''
+>   | class-char: '\'' char.sq '\''
+>   | class-set: '\"' chars.dq* '\"'
+
+## String and Character Literals
+
+> char.sq
+>   = [:char.sq:]
+>   | char.escape
+> :char.sq: = ' '..'~' - "\'\\"
+>
+> chars.dq
+>   = /[:char.dq:]+/
+>   | char.escape
+> :char.dq: = ' '..'~' - "\"\\"
+>
+> :char.brack: = :ascii.print: - " []\'\"-:\\"
+
+> char.escape
+>   = char-escape: / '\\' [:char.escape.c:] /
+>   | char-escape: "\\x" /[:digit.hex:]{2}/
+>   | char-escape: "\\u" /[:digit.hex:]{4}/
+>   | char-escape: "\\U"
+>                     / '0' [:digit.hex:]{5}
+>                     | "10" [:digit.hex:]{4}
+>                     /
+>   | char-escape: '\\' [:char.escape.passthru:]
+> :char.escape.c: = "0abefnrtv"
+> :char.escape.passthru: = :ascii.print: - :char.escape.c: - "xuU"
+
+## Names
+
+> Name.rule = / sep.dot<[:ascii.alpha:] [:ascii.alpha-num:]*> /
+>
+> Name.param = / [:ascii.alpha:] [:ascii.alpha-num:]* /
+
+TODO: should this really by separated by dash? seems incongruent
+> Name.ctor = / sep.dash<[:ascii.alpha:] [:ascii.alpha-num:]*> /
+
+> Name.class = / sep.dot<[:ascii.alpha:] [:ascii.alpha-num:'\-']*> /
+
+## General Combinators
+
+> enclose<o,i,c> = o lws* i lws* c
+>
+> enclose.parens<i> = enclose<'(',i,')'>
+> enclose.braces<i> = enclose<'{',i,'}'>
+> enclose.angles<i> = enclose<'<',i,'>'>
+> enclose.colon<i> = enclose<':',i,':'>
+
+> comma = lws* ',' lws*
+> colon = lws* ':' lws+
+
+> sep.by<e,s> = e (s -> e)*
+>
+> sep.comma<e> = sep.by<e,comma>
+> sep.dot<e> = sep.by<e,'.'>
+> sep.dash<e> = sep.by<e,'-'>
+
+## Basics
+
+> :ascii.print: = ' '..'~'
+
+> :digit: = '0'..'9'
+> :digit.hex: = :digit: | 'a'..'f' | 'A'..'F'
+
+> :ascii.alpha: = :ascii.alpha.lo: | :ascii.alpha.hi:
+> :ascii.alpha.lo: = 'a'..'z'
+> :ascii.alpha.hi: = 'A'..'Z'
+> :ascii.alpha-num: = :ascii.alpha: | :digit:
+
+> num.nat = / [:digit:] [:digit:]* /

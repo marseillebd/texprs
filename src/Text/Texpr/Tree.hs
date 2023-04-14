@@ -51,7 +51,7 @@ data Rule
   | Capture String Rule Rule -- i.e. capture string as the text matching Rule₁ and use that binding in Rule₂
   | Replay String -- rather than calling, so we don't have to save an environment
   | Recover Rule Rule -- if the first or second fails, skip it, then try second
-  deriving (Show)
+  deriving (Show,Eq)
 
 pattern Alt :: [Rule] -> Rule
 pattern Alt ts <- (fromAlt -> ts@(_:_:_))

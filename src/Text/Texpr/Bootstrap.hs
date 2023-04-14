@@ -1,489 +1,250 @@
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
 
-module Text.Texpr.Bootstrap where
+module Text.Texpr.Bootstrap
+  ( peg
+  , grammar
+  , clean
+  , parsePeg
+  ) where
 
-import Data.CharSet (CharSet)
+import Data.Char (chr)
+import Data.List (partition,uncons)
 import Data.Map (Map)
-import Text.Texpr.Tree (Rule(..), pattern Seq, pattern Alt, pattern Star, pattern Star1)
+import Data.Texpr (Texpr(..),Texprs)
+import Text.Location (Position(..),Range(..),FwdRange,toFwd,fromFwd)
+import Text.Texpr.Compile (compile)
+import Text.Texpr.Define (Peg(..),Rule(..),SatClass(..),CharClass(..))
 
-import qualified Data.CharSet as CS
-import qualified Data.Map as Map
+import qualified Text.Texpr.Tree as Tree
 
------- Rule Set ------
+------ Generated Base Grammar  ------
 
-startRule :: Rule
-startRule = Seq -- TODO
-  [ Star $ Alt
-    [ Call "Doc" []
-    , Seq
-      [ Call "BirdFoot" []
-      , Alt
-        [ Call "Rule.Def" []
-        , Call "Class.Def" []
-        ]
-      , opt $ Call "ws" []
-      , Alt [ Call "Nl" [], End ]
-      ]
-    , Call "blank" []
-    ]
-  , End
-  ]
+grammar :: (Map String ([String], Tree.Rule), Tree.Rule)
+grammar = case compile peg of
+  Right g -> g
+  Left e -> errorWithoutStackTrace $ "internal Tbnf error: " ++ show e
 
-rules :: Map String ([String], Rule)
-rules = Map.fromList
-  [ ("Doc", ([], doc))
-  , ("Doc.line", ([], doc_line_))
-  , ("Rule.Def", ([], rule_def))
-  , ("Rule.name", ([], rule_name_))
-  , ("Rule.name.lower", ([], rule_name_lower_))
-  , ("Rule.Parametric", ([], rule_parametric))
-  , ("Rule.Group", ([], rule_group))
-  , ("Rule", (["flat.in"], rule))
-  , ("Rule.Term", (["flat.in"], rule_term))
-  , ("Rule.Factor", (["flat.in"], rule_factor))
-  , ("Rule.Rep", (["flat.in"], rule_rep))
-  , ("Rule.Rep.Amount", ([], rule_rep_range))
-  , ("Rule.Commit", ([], rule_commit))
-  , ("Rule.prim", (["flat.in"], rule_prim_))
-  , ("Rule.Sat", ([], rule_sat))
-  , ("Rule.Char", ([], rule_char))
-  , ("Rule.String", ([], rule_string))
-  , ("Rule.Call", ([], rule_call))
-  , ("Rule.Flat", ([], rule_flat))
-  , ("Class.Def", ([], classDef))
-  , ("Class.body", ([], class_body_))
-  , ("Class.Var", ([], class_var))
-  , ("Class.name", ([], class_name_))
-  , ("Class.term", ([], class_term_))
-  , ("Class.operator", ([], class_operator_))
-  , ("Char", ([], char))
-  , ("Char.Range", ([], char_range))
-  , ("Char.Set", ([], char_set))
-  , ("char.sq", ([], char_sq_))
-  , ("chars.dq", ([], chars_dq_))
-  , ("char.Escape", ([], char_escape))
-  , ("num.nat", ([], num_nat_))
-  , ("Space", ([], space))
-  , ("Nl", ([], nl))
-  , ("BirdFoot", ([], birdFoot))
-  , ("BirdFoot.Improper", ([], birdFoot_improper))
-  , ("Comment", ([], comment))
-  , ("sep.by", sep_by_)
-  , ("sep.dot", sep_dot_)
-  , ("ws", ([], ws_))
-  , ("blank", ([], blank_))
-  ]
-
------- Literate Documentation ------
-
-doc :: Rule
-doc = Ctor "Doc" $ plus $ Alt
-  [ Seq [ Call "Doc.line" [], opt $ Call "Nl" [] ]
-  , Call "Nl" []
-  ]
-doc_line_ :: Rule
-doc_line_ = Flat $ Seq
-  [ Sat $ CS.complement $ CS.oneOf ">\n"
-  , Many $ CS.complement $ CS.singleton '\n'
-  ]
-
------- Defining Rules ------
-
-rule_def :: Rule
-rule_def = Ctor "Rule.Def" $ Seq
-  [ Alt
-    [ Call "Rule.Parametric" []
-    , Call "Rule.name" []
-    ]
-  , Call "ws" []
-  , Str "="
-  , Call "ws" []
-  , Call "Rule" [Call "Rule.Flat" []]
-  ]
-
-rule_parametric :: Rule
-rule_parametric = Ctor "Rule.Parametric" $ Seq
-  [ Call "Rule.name" []
-  , Str "<"
-  , opt $ Call "ws" []
-  , Call "sep.by"
-    [ Seq [ Str ",", opt $ Call "ws" [] ]
-    , Call "Rule.name.lower" []
-    ]
-  , opt $ Call "ws" []
-  , Str ">"
-  ]
-
-rule :: Rule
-rule = Ctor "Rule" $ Seq
-  [ Call "Rule.Term" [Call "flat.in" []]
-  , Star2 (Call "ws" []) $ Seq
-    [ Str "|"
-    , Call "ws" []
-    , Call "Rule.Term" [Call "flat.in" []]
-    ]
-  ]
-
-rule_term :: Rule
-rule_term = Ctor "Rule.Term" $ Seq
-  [ Call "Rule.Factor" [Call "flat.in" []]
-  , Star2 (Call "ws" []) (Call "Rule.Factor" [Call "flat.in" []])
-  ]
-
-rule_factor :: Rule
-rule_factor = Ctor "Rule.Factor" $ Alt
-  [ Call "Rule.Rep" [Call "flat.in" []]
-  , Call "Rule.prim" [Call "flat.in" []]
-  ]
-
-rule_rep :: Rule
-rule_rep = Ctor "Rule.Rep" $ Alt
-  [ Seq
-    [ Call "Rule.Commit" []
-    , Sat (CS.oneOf "*+") `Alt2` Call "Rule.Rep.Amount" []
-    ]
-  , Seq
-    [ Call "Rule.prim" [Call "flat.in" []]
-    , Sat (CS.oneOf "*+?") `Alt2` Call "Rule.Rep.Amount" []
-    ]
-  ]
-
-rule_rep_range :: Rule
-rule_rep_range = Ctor "Rule.Rep.Amount" $ Alt
-  [ Seq
-    [ Str "{"
-    , opt $ Call "ws" []
-    , opt $ Call "num.nat" []
-    , opt $ Call "ws" []
-    , Str ","
-    , opt $ Call "ws" []
-    , opt $ Call "num.nat" []
-    , opt $ Call "ws" []
-    , Str "}"
-    ]
-  , Seq
-    [ Str "{"
-    , opt $ Call "ws" []
-    , Call "num.nat" []
-    , opt $ Call "ws" []
-    , Str "}"
-    ]
-  ]
-
-rule_commit :: Rule
-rule_commit = Ctor "Rule.Commit" $ Seq
-  [ Str "("
-  , opt $ Call "ws" []
-  , Call "Rule.Term" [Call "Rule.Flat" []]
-  , Call "ws" []
-  , Str "->"
-  , Call "ws" []
-  , Call "Rule.Term" [Call "Rule.Flat" []]
-  , opt $ Call "ws" []
-  , Str ")"
-  ]
-
-rule_prim_ :: Rule
-rule_prim_ = Alt
-  [ Call "Rule.Group" []
-  , Call "Rule.Call" []
-  , Call "Rule.Char" []
-  , Call "Rule.String" []
-  , Call "Rule.Sat" []
-  , Str "$"
-  , Call "flat.in" [] -- should be either Rule.Flat or Void; needed to avoid attempting a flatten parse directly inside another flatten, which can happen when there's space before a closing slash
-  ]
-
-rule_group :: Rule
-rule_group = Ctor "Rule.Group" $ Seq
-  [ Str "("
-  , opt $ Call "ws" []
-  , Call "Rule" [Call "Rule.Flat" []]
-  , opt $ Call "ws" []
-  , Str ")"
-  ]
-
-rule_flat :: Rule
-rule_flat = Ctor "Rule.Flat" $ Seq
-  [ Str "/"
-  , opt $ Call "ws" []
-  , Call "Rule" [End] -- TODO for now I'm using End, but this should be Void with an appropriate message
-  , opt $ Call "ws" []
-  , Str "/"
-  ]
-
-rule_sat :: Rule
-rule_sat = Ctor "Rule.Sat" $ Seq
-  [ Alt [Str "[^", Str "["]
-  , Star $ Alt
-    [ Call "Char.Range" []
-    , Call "Char" []
-    , Call "Class.Var" []
-    , Flat $ Seq [ Sat brackChar, Many brackChar ]
-    , Call "ws" []
-    ]
-  , Str "]"
-  ]
+pattern Fwd :: Range -> FwdRange
+pattern Fwd r <- (fromFwd -> r)
   where
-  brackChar = asciiPrint `CS.minus` CS.oneOf "[]\'-:\\ "
+  Fwd = toFwd
 
-rule_char :: Rule
-rule_char = Ctor "Rule.Char" $ Seq
-  [ Str "\'"
-  , Call "char.sq" []
-  , Str "\'"
-  ]
+peg :: Peg
+peg = Peg {start = Nothing, rules = [(Fwd (Range {anchor = Pos {nChars = 3, line = 2, col = 3}, position = Pos {nChars = 25, line = 2, col = 25}}),(Fwd (Range {anchor = Pos {nChars = 3, line = 2, col = 3}, position = Pos {nChars = 8, line = 2, col = 8}}),"start",[]),Seq (Fwd (Range {anchor = Pos {nChars = 11, line = 2, col = 11}, position = Pos {nChars = 25, line = 2, col = 25}})) [Rep (Fwd (Range {anchor = Pos {nChars = 11, line = 2, col = 11}, position = Pos {nChars = 23, line = 2, col = 23}})) (Str (Fwd (Range {anchor = Pos {nChars = 12, line = 2, col = 12}, position = Pos {nChars = 14, line = 2, col = 14}})) "",Just (Call (Fwd (Range {anchor = Pos {nChars = 18, line = 2, col = 18}, position = Pos {nChars = 21, line = 2, col = 21}})) "top" [])) (0,Nothing),End (Fwd (Range {anchor = Pos {nChars = 24, line = 2, col = 24}, position = Pos {nChars = 25, line = 2, col = 25}}))]),(Fwd (Range {anchor = Pos {nChars = 28, line = 3, col = 3}, position = Pos {nChars = 84, line = 6, col = 10}}),(Fwd (Range {anchor = Pos {nChars = 28, line = 3, col = 3}, position = Pos {nChars = 31, line = 3, col = 6}}),"top",[]),Alt (Fwd (Range {anchor = Pos {nChars = 38, line = 4, col = 7}, position = Pos {nChars = 84, line = 6, col = 10}})) [Call (Fwd (Range {anchor = Pos {nChars = 38, line = 4, col = 7}, position = Pos {nChars = 41, line = 4, col = 10}})) "Doc" [],Seq (Fwd (Range {anchor = Pos {nChars = 48, line = 5, col = 7}, position = Pos {nChars = 74, line = 5, col = 33}})) [Call (Fwd (Range {anchor = Pos {nChars = 48, line = 5, col = 7}, position = Pos {nChars = 56, line = 5, col = 15}})) "birdFoot" [],Call (Fwd (Range {anchor = Pos {nChars = 57, line = 5, col = 16}, position = Pos {nChars = 60, line = 5, col = 19}})) "Def" [],Rep (Fwd (Range {anchor = Pos {nChars = 61, line = 5, col = 20}, position = Pos {nChars = 65, line = 5, col = 24}})) (Call (Fwd (Range {anchor = Pos {nChars = 61, line = 5, col = 20}, position = Pos {nChars = 64, line = 5, col = 23}})) "lws" [],Nothing) (0,Nothing),Alt (Fwd (Range {anchor = Pos {nChars = 67, line = 5, col = 26}, position = Pos {nChars = 73, line = 5, col = 32}})) [Call (Fwd (Range {anchor = Pos {nChars = 67, line = 5, col = 26}, position = Pos {nChars = 69, line = 5, col = 28}})) "nl" [],End (Fwd (Range {anchor = Pos {nChars = 72, line = 5, col = 31}, position = Pos {nChars = 73, line = 5, col = 32}}))]],Call (Fwd (Range {anchor = Pos {nChars = 81, line = 6, col = 7}, position = Pos {nChars = 84, line = 6, col = 10}})) "vws" []]),(Fwd (Range {anchor = Pos {nChars = 283, line = 13, col = 3}, position = Pos {nChars = 309, line = 13, col = 29}}),(Fwd (Range {anchor = Pos {nChars = 283, line = 13, col = 3}, position = Pos {nChars = 286, line = 13, col = 6}}),"Doc",[]),Rep (Fwd (Range {anchor = Pos {nChars = 289, line = 13, col = 9}, position = Pos {nChars = 309, line = 13, col = 29}})) (Alt (Fwd (Range {anchor = Pos {nChars = 290, line = 13, col = 10}, position = Pos {nChars = 307, line = 13, col = 27}})) [Seq (Fwd (Range {anchor = Pos {nChars = 290, line = 13, col = 10}, position = Pos {nChars = 302, line = 13, col = 22}})) [Call (Fwd (Range {anchor = Pos {nChars = 290, line = 13, col = 10}, position = Pos {nChars = 298, line = 13, col = 18}})) "doc.line" [],Rep (Fwd (Range {anchor = Pos {nChars = 299, line = 13, col = 19}, position = Pos {nChars = 302, line = 13, col = 22}})) (Call (Fwd (Range {anchor = Pos {nChars = 299, line = 13, col = 19}, position = Pos {nChars = 301, line = 13, col = 21}})) "nl" [],Nothing) (0,Just 1)],Call (Fwd (Range {anchor = Pos {nChars = 305, line = 13, col = 25}, position = Pos {nChars = 307, line = 13, col = 27}})) "nl" []],Nothing) (1,Nothing)),(Fwd (Range {anchor = Pos {nChars = 312, line = 14, col = 3}, position = Pos {nChars = 450, line = 17, col = 6}}),(Fwd (Range {anchor = Pos {nChars = 312, line = 14, col = 3}, position = Pos {nChars = 320, line = 14, col = 11}}),"doc.line",[]),Ctor (Fwd (Range {anchor = Pos {nChars = 323, line = 14, col = 14}, position = Pos {nChars = 326, line = 14, col = 17}})) "doc" (Flat (Fwd (Range {anchor = Pos {nChars = 332, line = 15, col = 5}, position = Pos {nChars = 450, line = 17, col = 6}})) (Seq (Fwd (Range {anchor = Pos {nChars = 334, line = 15, col = 7}, position = Pos {nChars = 408, line = 16, col = 18}})) [SatNeg (Fwd (Range {anchor = Pos {nChars = 334, line = 15, col = 7}, position = Pos {nChars = 344, line = 15, col = 17}})) [SatSet (Fwd (Range {anchor = Pos {nChars = 337, line = 15, col = 10}, position = Pos {nChars = 338, line = 15, col = 11}})) ">",SatChar (Fwd (Range {anchor = Pos {nChars = 338, line = 15, col = 11}, position = Pos {nChars = 342, line = 15, col = 15}})) '\n'],Rep (Fwd (Range {anchor = Pos {nChars = 397, line = 16, col = 7}, position = Pos {nChars = 408, line = 16, col = 18}})) (SatNeg (Fwd (Range {anchor = Pos {nChars = 397, line = 16, col = 7}, position = Pos {nChars = 407, line = 16, col = 17}})) [SatChar (Fwd (Range {anchor = Pos {nChars = 400, line = 16, col = 10}, position = Pos {nChars = 404, line = 16, col = 14}})) '\n'],Nothing) (0,Nothing)]))),(Fwd (Range {anchor = Pos {nChars = 720, line = 25, col = 3}, position = Pos {nChars = 741, line = 25, col = 24}}),(Fwd (Range {anchor = Pos {nChars = 720, line = 25, col = 3}, position = Pos {nChars = 725, line = 25, col = 8}}),"space",[]),Ctor (Fwd (Range {anchor = Pos {nChars = 728, line = 25, col = 11}, position = Pos {nChars = 733, line = 25, col = 16}})) "space" (Flat (Fwd (Range {anchor = Pos {nChars = 735, line = 25, col = 18}, position = Pos {nChars = 741, line = 25, col = 24}})) (Rep (Fwd (Range {anchor = Pos {nChars = 736, line = 25, col = 19}, position = Pos {nChars = 740, line = 25, col = 23}})) (Char (Fwd (Range {anchor = Pos {nChars = 736, line = 25, col = 19}, position = Pos {nChars = 739, line = 25, col = 22}})) ' ',Nothing) (1,Nothing)))),(Fwd (Range {anchor = Pos {nChars = 744, line = 26, col = 3}, position = Pos {nChars = 757, line = 26, col = 16}}),(Fwd (Range {anchor = Pos {nChars = 744, line = 26, col = 3}, position = Pos {nChars = 746, line = 26, col = 5}}),"nl",[]),Ctor (Fwd (Range {anchor = Pos {nChars = 749, line = 26, col = 8}, position = Pos {nChars = 751, line = 26, col = 10}})) "nl" (Char (Fwd (Range {anchor = Pos {nChars = 753, line = 26, col = 12}, position = Pos {nChars = 757, line = 26, col = 16}})) '\n')),(Fwd (Range {anchor = Pos {nChars = 760, line = 27, col = 3}, position = Pos {nChars = 793, line = 27, col = 36}}),(Fwd (Range {anchor = Pos {nChars = 760, line = 27, col = 3}, position = Pos {nChars = 767, line = 27, col = 10}}),"comment",[]),Ctor (Fwd (Range {anchor = Pos {nChars = 770, line = 27, col = 13}, position = Pos {nChars = 777, line = 27, col = 20}})) "comment" (Seq (Fwd (Range {anchor = Pos {nChars = 779, line = 27, col = 22}, position = Pos {nChars = 793, line = 27, col = 36}})) [Char (Fwd (Range {anchor = Pos {nChars = 779, line = 27, col = 22}, position = Pos {nChars = 782, line = 27, col = 25}})) '#',Flat (Fwd (Range {anchor = Pos {nChars = 783, line = 27, col = 26}, position = Pos {nChars = 793, line = 27, col = 36}})) (Rep (Fwd (Range {anchor = Pos {nChars = 784, line = 27, col = 27}, position = Pos {nChars = 792, line = 27, col = 35}})) (SatNeg (Fwd (Range {anchor = Pos {nChars = 784, line = 27, col = 27}, position = Pos {nChars = 791, line = 27, col = 34}})) [SatChar (Fwd (Range {anchor = Pos {nChars = 786, line = 27, col = 29}, position = Pos {nChars = 790, line = 27, col = 33}})) '\n'],Nothing) (0,Nothing))])),(Fwd (Range {anchor = Pos {nChars = 798, line = 29, col = 3}, position = Pos {nChars = 827, line = 29, col = 32}}),(Fwd (Range {anchor = Pos {nChars = 798, line = 29, col = 3}, position = Pos {nChars = 806, line = 29, col = 11}}),"birdFoot",[]),Ctor (Fwd (Range {anchor = Pos {nChars = 809, line = 29, col = 14}, position = Pos {nChars = 818, line = 29, col = 23}})) "bird-foot" (Seq (Fwd (Range {anchor = Pos {nChars = 820, line = 29, col = 25}, position = Pos {nChars = 827, line = 29, col = 32}})) [Char (Fwd (Range {anchor = Pos {nChars = 820, line = 29, col = 25}, position = Pos {nChars = 823, line = 29, col = 28}})) '>',Char (Fwd (Range {anchor = Pos {nChars = 824, line = 29, col = 29}, position = Pos {nChars = 827, line = 29, col = 32}})) ' '])),(Fwd (Range {anchor = Pos {nChars = 830, line = 30, col = 3}, position = Pos {nChars = 869, line = 30, col = 42}}),(Fwd (Range {anchor = Pos {nChars = 830, line = 30, col = 3}, position = Pos {nChars = 847, line = 30, col = 20}}),"birdFoot.improper",[]),Ctor (Fwd (Range {anchor = Pos {nChars = 850, line = 30, col = 23}, position = Pos {nChars = 859, line = 30, col = 32}})) "bird-foot" (Seq (Fwd (Range {anchor = Pos {nChars = 861, line = 30, col = 34}, position = Pos {nChars = 869, line = 30, col = 42}})) [Char (Fwd (Range {anchor = Pos {nChars = 861, line = 30, col = 34}, position = Pos {nChars = 864, line = 30, col = 37}})) '>',Char (Fwd (Range {anchor = Pos {nChars = 865, line = 30, col = 38}, position = Pos {nChars = 869, line = 30, col = 42}})) '\n'])),(Fwd (Range {anchor = Pos {nChars = 874, line = 32, col = 3}, position = Pos {nChars = 944, line = 34, col = 43}}),(Fwd (Range {anchor = Pos {nChars = 874, line = 32, col = 3}, position = Pos {nChars = 877, line = 32, col = 6}}),"lws",[]),Alt (Fwd (Range {anchor = Pos {nChars = 880, line = 32, col = 9}, position = Pos {nChars = 944, line = 34, col = 43}})) [Call (Fwd (Range {anchor = Pos {nChars = 880, line = 32, col = 9}, position = Pos {nChars = 885, line = 32, col = 14}})) "space" [],Call (Fwd (Range {anchor = Pos {nChars = 894, line = 33, col = 9}, position = Pos {nChars = 901, line = 33, col = 16}})) "comment" [],Seq (Fwd (Range {anchor = Pos {nChars = 910, line = 34, col = 9}, position = Pos {nChars = 944, line = 34, col = 43}})) [Call (Fwd (Range {anchor = Pos {nChars = 910, line = 34, col = 9}, position = Pos {nChars = 912, line = 34, col = 11}})) "nl" [],Rep (Fwd (Range {anchor = Pos {nChars = 913, line = 34, col = 12}, position = Pos {nChars = 931, line = 34, col = 30}})) (Call (Fwd (Range {anchor = Pos {nChars = 913, line = 34, col = 12}, position = Pos {nChars = 930, line = 34, col = 29}})) "birdFoot.improper" [],Nothing) (0,Nothing),Call (Fwd (Range {anchor = Pos {nChars = 932, line = 34, col = 31}, position = Pos {nChars = 940, line = 34, col = 39}})) "birdFoot" [],Call (Fwd (Range {anchor = Pos {nChars = 941, line = 34, col = 40}, position = Pos {nChars = 944, line = 34, col = 43}})) "lws" []]]),(Fwd (Range {anchor = Pos {nChars = 1229, line = 42, col = 3}, position = Pos {nChars = 1288, line = 43, col = 26}}),(Fwd (Range {anchor = Pos {nChars = 1229, line = 42, col = 3}, position = Pos {nChars = 1232, line = 42, col = 6}}),"vws",[]),Alt (Fwd (Range {anchor = Pos {nChars = 1235, line = 42, col = 9}, position = Pos {nChars = 1288, line = 43, col = 26}})) [Seq (Fwd (Range {anchor = Pos {nChars = 1235, line = 42, col = 9}, position = Pos {nChars = 1262, line = 42, col = 36}})) [Call (Fwd (Range {anchor = Pos {nChars = 1235, line = 42, col = 9}, position = Pos {nChars = 1243, line = 42, col = 17}})) "birdFoot" [],Rep (Fwd (Range {anchor = Pos {nChars = 1244, line = 42, col = 18}, position = Pos {nChars = 1250, line = 42, col = 24}})) (Call (Fwd (Range {anchor = Pos {nChars = 1244, line = 42, col = 18}, position = Pos {nChars = 1249, line = 42, col = 23}})) "space" [],Nothing) (0,Nothing),Rep (Fwd (Range {anchor = Pos {nChars = 1251, line = 42, col = 25}, position = Pos {nChars = 1259, line = 42, col = 33}})) (Call (Fwd (Range {anchor = Pos {nChars = 1251, line = 42, col = 25}, position = Pos {nChars = 1258, line = 42, col = 32}})) "comment" [],Nothing) (0,Just 1),Call (Fwd (Range {anchor = Pos {nChars = 1260, line = 42, col = 34}, position = Pos {nChars = 1262, line = 42, col = 36}})) "nl" []],Call (Fwd (Range {anchor = Pos {nChars = 1271, line = 43, col = 9}, position = Pos {nChars = 1288, line = 43, col = 26}})) "birdFoot.improper" []]),(Fwd (Range {anchor = Pos {nChars = 1489, line = 52, col = 3}, position = Pos {nChars = 1527, line = 52, col = 41}}),(Fwd (Range {anchor = Pos {nChars = 1489, line = 52, col = 3}, position = Pos {nChars = 1492, line = 52, col = 6}}),"Def",[]),Alt (Fwd (Range {anchor = Pos {nChars = 1495, line = 52, col = 9}, position = Pos {nChars = 1527, line = 52, col = 41}})) [Call (Fwd (Range {anchor = Pos {nChars = 1495, line = 52, col = 9}, position = Pos {nChars = 1504, line = 52, col = 18}})) "Def.Start" [],Call (Fwd (Range {anchor = Pos {nChars = 1507, line = 52, col = 21}, position = Pos {nChars = 1516, line = 52, col = 30}})) "Def.Class" [],Call (Fwd (Range {anchor = Pos {nChars = 1519, line = 52, col = 33}, position = Pos {nChars = 1527, line = 52, col = 41}})) "Def.Rule" []]),(Fwd (Range {anchor = Pos {nChars = 1531, line = 54, col = 3}, position = Pos {nChars = 1586, line = 54, col = 58}}),(Fwd (Range {anchor = Pos {nChars = 1531, line = 54, col = 3}, position = Pos {nChars = 1540, line = 54, col = 12}}),"Def.Start",[]),Ctor (Fwd (Range {anchor = Pos {nChars = 1543, line = 54, col = 15}, position = Pos {nChars = 1552, line = 54, col = 24}})) "def-start" (Seq (Fwd (Range {anchor = Pos {nChars = 1554, line = 54, col = 26}, position = Pos {nChars = 1586, line = 54, col = 58}})) [Str (Fwd (Range {anchor = Pos {nChars = 1554, line = 54, col = 26}, position = Pos {nChars = 1562, line = 54, col = 34}})) "@start",Rep (Fwd (Range {anchor = Pos {nChars = 1563, line = 54, col = 35}, position = Pos {nChars = 1567, line = 54, col = 39}})) (Call (Fwd (Range {anchor = Pos {nChars = 1563, line = 54, col = 35}, position = Pos {nChars = 1566, line = 54, col = 38}})) "lws" [],Nothing) (1,Nothing),Char (Fwd (Range {anchor = Pos {nChars = 1568, line = 54, col = 40}, position = Pos {nChars = 1571, line = 54, col = 43}})) '=',Rep (Fwd (Range {anchor = Pos {nChars = 1572, line = 54, col = 44}, position = Pos {nChars = 1576, line = 54, col = 48}})) (Call (Fwd (Range {anchor = Pos {nChars = 1572, line = 54, col = 44}, position = Pos {nChars = 1575, line = 54, col = 47}})) "lws" [],Nothing) (1,Nothing),Call (Fwd (Range {anchor = Pos {nChars = 1577, line = 54, col = 49}, position = Pos {nChars = 1586, line = 54, col = 58}})) "Name.rule" []])),(Fwd (Range {anchor = Pos {nChars = 1657, line = 58, col = 3}, position = Pos {nChars = 1720, line = 58, col = 66}}),(Fwd (Range {anchor = Pos {nChars = 1657, line = 58, col = 3}, position = Pos {nChars = 1665, line = 58, col = 11}}),"Def.Rule",[]),Ctor (Fwd (Range {anchor = Pos {nChars = 1668, line = 58, col = 14}, position = Pos {nChars = 1676, line = 58, col = 22}})) "def-rule" (Seq (Fwd (Range {anchor = Pos {nChars = 1678, line = 58, col = 24}, position = Pos {nChars = 1720, line = 58, col = 66}})) [Call (Fwd (Range {anchor = Pos {nChars = 1678, line = 58, col = 24}, position = Pos {nChars = 1690, line = 58, col = 36}})) "Def.Rule.lhs" [],Rep (Fwd (Range {anchor = Pos {nChars = 1691, line = 58, col = 37}, position = Pos {nChars = 1695, line = 58, col = 41}})) (Call (Fwd (Range {anchor = Pos {nChars = 1691, line = 58, col = 37}, position = Pos {nChars = 1694, line = 58, col = 40}})) "lws" [],Nothing) (1,Nothing),Char (Fwd (Range {anchor = Pos {nChars = 1696, line = 58, col = 42}, position = Pos {nChars = 1699, line = 58, col = 45}})) '=',Rep (Fwd (Range {anchor = Pos {nChars = 1700, line = 58, col = 46}, position = Pos {nChars = 1704, line = 58, col = 50}})) (Call (Fwd (Range {anchor = Pos {nChars = 1700, line = 58, col = 46}, position = Pos {nChars = 1703, line = 58, col = 49}})) "lws" [],Nothing) (1,Nothing),Call (Fwd (Range {anchor = Pos {nChars = 1705, line = 58, col = 51}, position = Pos {nChars = 1720, line = 58, col = 66}})) "Rule" [Call (Fwd (Range {anchor = Pos {nChars = 1710, line = 58, col = 56}, position = Pos {nChars = 1719, line = 58, col = 65}})) "Rule.Flat" []]])),(Fwd (Range {anchor = Pos {nChars = 1723, line = 59, col = 3}, position = Pos {nChars = 1847, line = 61, col = 27}}),(Fwd (Range {anchor = Pos {nChars = 1723, line = 59, col = 3}, position = Pos {nChars = 1735, line = 59, col = 15}}),"Def.Rule.lhs",[]),Alt (Fwd (Range {anchor = Pos {nChars = 1738, line = 59, col = 18}, position = Pos {nChars = 1847, line = 61, col = 27}})) [Ctor (Fwd (Range {anchor = Pos {nChars = 1738, line = 59, col = 18}, position = Pos {nChars = 1753, line = 59, col = 33}})) "rule-parametric" (Seq (Fwd (Range {anchor = Pos {nChars = 1773, line = 60, col = 19}, position = Pos {nChars = 1820, line = 60, col = 66}})) [Call (Fwd (Range {anchor = Pos {nChars = 1773, line = 60, col = 19}, position = Pos {nChars = 1782, line = 60, col = 28}})) "Name.rule" [],Call (Fwd (Range {anchor = Pos {nChars = 1783, line = 60, col = 29}, position = Pos {nChars = 1820, line = 60, col = 66}})) "enclose.angles" [Call (Fwd (Range {anchor = Pos {nChars = 1798, line = 60, col = 44}, position = Pos {nChars = 1819, line = 60, col = 65}})) "sep.comma" [Call (Fwd (Range {anchor = Pos {nChars = 1808, line = 60, col = 54}, position = Pos {nChars = 1818, line = 60, col = 64}})) "Name.param" []]]]),Call (Fwd (Range {anchor = Pos {nChars = 1838, line = 61, col = 18}, position = Pos {nChars = 1847, line = 61, col = 27}})) "Name.rule" []]),(Fwd (Range {anchor = Pos {nChars = 1851, line = 63, col = 3}, position = Pos {nChars = 1919, line = 63, col = 71}}),(Fwd (Range {anchor = Pos {nChars = 1851, line = 63, col = 3}, position = Pos {nChars = 1860, line = 63, col = 12}}),"Def.Class",[]),Ctor (Fwd (Range {anchor = Pos {nChars = 1863, line = 63, col = 15}, position = Pos {nChars = 1872, line = 63, col = 24}})) "def-class" (Seq (Fwd (Range {anchor = Pos {nChars = 1874, line = 63, col = 26}, position = Pos {nChars = 1919, line = 63, col = 71}})) [Call (Fwd (Range {anchor = Pos {nChars = 1874, line = 63, col = 26}, position = Pos {nChars = 1899, line = 63, col = 51}})) "enclose.colon" [Call (Fwd (Range {anchor = Pos {nChars = 1888, line = 63, col = 40}, position = Pos {nChars = 1898, line = 63, col = 50}})) "Name.class" []],Rep (Fwd (Range {anchor = Pos {nChars = 1900, line = 63, col = 52}, position = Pos {nChars = 1904, line = 63, col = 56}})) (Call (Fwd (Range {anchor = Pos {nChars = 1900, line = 63, col = 52}, position = Pos {nChars = 1903, line = 63, col = 55}})) "lws" [],Nothing) (1,Nothing),Char (Fwd (Range {anchor = Pos {nChars = 1905, line = 63, col = 57}, position = Pos {nChars = 1908, line = 63, col = 60}})) '=',Rep (Fwd (Range {anchor = Pos {nChars = 1909, line = 63, col = 61}, position = Pos {nChars = 1913, line = 63, col = 65}})) (Call (Fwd (Range {anchor = Pos {nChars = 1909, line = 63, col = 61}, position = Pos {nChars = 1912, line = 63, col = 64}})) "lws" [],Nothing) (1,Nothing),Call (Fwd (Range {anchor = Pos {nChars = 1914, line = 63, col = 66}, position = Pos {nChars = 1919, line = 63, col = 71}})) "Class" []])),(Fwd (Range {anchor = Pos {nChars = 1942, line = 67, col = 3}, position = Pos {nChars = 2030, line = 69, col = 19}}),(Fwd (Range {anchor = Pos {nChars = 1942, line = 67, col = 3}, position = Pos {nChars = 1949, line = 67, col = 10}}),"Rule",["f"]),Alt (Fwd (Range {anchor = Pos {nChars = 1956, line = 68, col = 7}, position = Pos {nChars = 2030, line = 69, col = 19}})) [Ctor (Fwd (Range {anchor = Pos {nChars = 1956, line = 68, col = 7}, position = Pos {nChars = 1964, line = 68, col = 15}})) "rule-alt" (Seq (Fwd (Range {anchor = Pos {nChars = 1966, line = 68, col = 17}, position = Pos {nChars = 2011, line = 68, col = 62}})) [Call (Fwd (Range {anchor = Pos {nChars = 1966, line = 68, col = 17}, position = Pos {nChars = 1978, line = 68, col = 29}})) "Rule.Term" [Call (Fwd (Range {anchor = Pos {nChars = 1976, line = 68, col = 27}, position = Pos {nChars = 1977, line = 68, col = 28}})) "f" []],Rep (Fwd (Range {anchor = Pos {nChars = 1979, line = 68, col = 30}, position = Pos {nChars = 2011, line = 68, col = 62}})) (Seq (Fwd (Range {anchor = Pos {nChars = 1980, line = 68, col = 31}, position = Pos {nChars = 1988, line = 68, col = 39}})) [Rep (Fwd (Range {anchor = Pos {nChars = 1980, line = 68, col = 31}, position = Pos {nChars = 1984, line = 68, col = 35}})) (Call (Fwd (Range {anchor = Pos {nChars = 1980, line = 68, col = 31}, position = Pos {nChars = 1983, line = 68, col = 34}})) "lws" [],Nothing) (1,Nothing),Char (Fwd (Range {anchor = Pos {nChars = 1985, line = 68, col = 36}, position = Pos {nChars = 1988, line = 68, col = 39}})) '|'],Just (Seq (Fwd (Range {anchor = Pos {nChars = 1992, line = 68, col = 43}, position = Pos {nChars = 2009, line = 68, col = 60}})) [Rep (Fwd (Range {anchor = Pos {nChars = 1992, line = 68, col = 43}, position = Pos {nChars = 1996, line = 68, col = 47}})) (Call (Fwd (Range {anchor = Pos {nChars = 1992, line = 68, col = 43}, position = Pos {nChars = 1995, line = 68, col = 46}})) "lws" [],Nothing) (1,Nothing),Call (Fwd (Range {anchor = Pos {nChars = 1997, line = 68, col = 48}, position = Pos {nChars = 2009, line = 68, col = 60}})) "Rule.Term" [Call (Fwd (Range {anchor = Pos {nChars = 2007, line = 68, col = 58}, position = Pos {nChars = 2008, line = 68, col = 59}})) "f" []]])) (1,Nothing)]),Call (Fwd (Range {anchor = Pos {nChars = 2018, line = 69, col = 7}, position = Pos {nChars = 2030, line = 69, col = 19}})) "Rule.Term" [Call (Fwd (Range {anchor = Pos {nChars = 2028, line = 69, col = 17}, position = Pos {nChars = 2029, line = 69, col = 18}})) "f" []]]),(Fwd (Range {anchor = Pos {nChars = 2033, line = 70, col = 3}, position = Pos {nChars = 2108, line = 72, col = 18}}),(Fwd (Range {anchor = Pos {nChars = 2033, line = 70, col = 3}, position = Pos {nChars = 2045, line = 70, col = 15}}),"Rule.Term",["f"]),Alt (Fwd (Range {anchor = Pos {nChars = 2052, line = 71, col = 7}, position = Pos {nChars = 2108, line = 72, col = 18}})) [Ctor (Fwd (Range {anchor = Pos {nChars = 2052, line = 71, col = 7}, position = Pos {nChars = 2061, line = 71, col = 16}})) "rule-ctor" (Seq (Fwd (Range {anchor = Pos {nChars = 2063, line = 71, col = 18}, position = Pos {nChars = 2090, line = 71, col = 45}})) [Call (Fwd (Range {anchor = Pos {nChars = 2063, line = 71, col = 18}, position = Pos {nChars = 2072, line = 71, col = 27}})) "Name.ctor" [],Call (Fwd (Range {anchor = Pos {nChars = 2073, line = 71, col = 28}, position = Pos {nChars = 2078, line = 71, col = 33}})) "colon" [],Call (Fwd (Range {anchor = Pos {nChars = 2079, line = 71, col = 34}, position = Pos {nChars = 2090, line = 71, col = 45}})) "Rule.Seq" [Call (Fwd (Range {anchor = Pos {nChars = 2088, line = 71, col = 43}, position = Pos {nChars = 2089, line = 71, col = 44}})) "f" []]]),Call (Fwd (Range {anchor = Pos {nChars = 2097, line = 72, col = 7}, position = Pos {nChars = 2108, line = 72, col = 18}})) "Rule.Seq" [Call (Fwd (Range {anchor = Pos {nChars = 2106, line = 72, col = 16}, position = Pos {nChars = 2107, line = 72, col = 17}})) "f" []]]),(Fwd (Range {anchor = Pos {nChars = 2111, line = 73, col = 3}, position = Pos {nChars = 2200, line = 75, col = 21}}),(Fwd (Range {anchor = Pos {nChars = 2111, line = 73, col = 3}, position = Pos {nChars = 2122, line = 73, col = 14}}),"Rule.Seq",["f"]),Alt (Fwd (Range {anchor = Pos {nChars = 2129, line = 74, col = 7}, position = Pos {nChars = 2200, line = 75, col = 21}})) [Ctor (Fwd (Range {anchor = Pos {nChars = 2129, line = 74, col = 7}, position = Pos {nChars = 2137, line = 74, col = 15}})) "rule-seq" (Seq (Fwd (Range {anchor = Pos {nChars = 2139, line = 74, col = 17}, position = Pos {nChars = 2179, line = 74, col = 57}})) [Call (Fwd (Range {anchor = Pos {nChars = 2139, line = 74, col = 17}, position = Pos {nChars = 2153, line = 74, col = 31}})) "Rule.Factor" [Call (Fwd (Range {anchor = Pos {nChars = 2151, line = 74, col = 29}, position = Pos {nChars = 2152, line = 74, col = 30}})) "f" []],Rep (Fwd (Range {anchor = Pos {nChars = 2154, line = 74, col = 32}, position = Pos {nChars = 2179, line = 74, col = 57}})) (Rep (Fwd (Range {anchor = Pos {nChars = 2155, line = 74, col = 33}, position = Pos {nChars = 2159, line = 74, col = 37}})) (Call (Fwd (Range {anchor = Pos {nChars = 2155, line = 74, col = 33}, position = Pos {nChars = 2158, line = 74, col = 36}})) "lws" [],Nothing) (1,Nothing),Just (Call (Fwd (Range {anchor = Pos {nChars = 2163, line = 74, col = 41}, position = Pos {nChars = 2177, line = 74, col = 55}})) "Rule.Factor" [Call (Fwd (Range {anchor = Pos {nChars = 2175, line = 74, col = 53}, position = Pos {nChars = 2176, line = 74, col = 54}})) "f" []])) (1,Nothing)]),Call (Fwd (Range {anchor = Pos {nChars = 2186, line = 75, col = 7}, position = Pos {nChars = 2200, line = 75, col = 21}})) "Rule.Factor" [Call (Fwd (Range {anchor = Pos {nChars = 2198, line = 75, col = 19}, position = Pos {nChars = 2199, line = 75, col = 20}})) "f" []]]),(Fwd (Range {anchor = Pos {nChars = 2203, line = 76, col = 3}, position = Pos {nChars = 2287, line = 78, col = 19}}),(Fwd (Range {anchor = Pos {nChars = 2203, line = 76, col = 3}, position = Pos {nChars = 2217, line = 76, col = 17}}),"Rule.Factor",["f"]),Alt (Fwd (Range {anchor = Pos {nChars = 2224, line = 77, col = 7}, position = Pos {nChars = 2287, line = 78, col = 19}})) [Ctor (Fwd (Range {anchor = Pos {nChars = 2224, line = 77, col = 7}, position = Pos {nChars = 2232, line = 77, col = 15}})) "rule-rep" (Seq (Fwd (Range {anchor = Pos {nChars = 2234, line = 77, col = 17}, position = Pos {nChars = 2268, line = 77, col = 51}})) [Call (Fwd (Range {anchor = Pos {nChars = 2234, line = 77, col = 17}, position = Pos {nChars = 2252, line = 77, col = 35}})) "Rule.Rep.commit" [Call (Fwd (Range {anchor = Pos {nChars = 2250, line = 77, col = 33}, position = Pos {nChars = 2251, line = 77, col = 34}})) "f" []],Call (Fwd (Range {anchor = Pos {nChars = 2253, line = 77, col = 36}, position = Pos {nChars = 2268, line = 77, col = 51}})) "Rule.Rep.amount" []]),Call (Fwd (Range {anchor = Pos {nChars = 2275, line = 78, col = 7}, position = Pos {nChars = 2287, line = 78, col = 19}})) "Rule.Base" [Call (Fwd (Range {anchor = Pos {nChars = 2285, line = 78, col = 17}, position = Pos {nChars = 2286, line = 78, col = 18}})) "f" []]]),(Fwd (Range {anchor = Pos {nChars = 2290, line = 79, col = 3}, position = Pos {nChars = 2417, line = 82, col = 42}}),(Fwd (Range {anchor = Pos {nChars = 2290, line = 79, col = 3}, position = Pos {nChars = 2305, line = 79, col = 18}}),"Rule.Rep.amount",[]),Alt (Fwd (Range {anchor = Pos {nChars = 2312, line = 80, col = 7}, position = Pos {nChars = 2417, line = 82, col = 42}})) [Sat (Fwd (Range {anchor = Pos {nChars = 2312, line = 80, col = 7}, position = Pos {nChars = 2317, line = 80, col = 12}})) [SatSet (Fwd (Range {anchor = Pos {nChars = 2313, line = 80, col = 8}, position = Pos {nChars = 2316, line = 80, col = 11}})) "*+?"],Ctor (Fwd (Range {anchor = Pos {nChars = 2324, line = 81, col = 7}, position = Pos {nChars = 2334, line = 81, col = 17}})) "rep-custom" (Call (Fwd (Range {anchor = Pos {nChars = 2336, line = 81, col = 19}, position = Pos {nChars = 2375, line = 81, col = 58}})) "enclose.braces" [Seq (Fwd (Range {anchor = Pos {nChars = 2351, line = 81, col = 34}, position = Pos {nChars = 2374, line = 81, col = 57}})) [Rep (Fwd (Range {anchor = Pos {nChars = 2351, line = 81, col = 34}, position = Pos {nChars = 2359, line = 81, col = 42}})) (Call (Fwd (Range {anchor = Pos {nChars = 2351, line = 81, col = 34}, position = Pos {nChars = 2358, line = 81, col = 41}})) "num.nat" [],Nothing) (0,Just 1),Call (Fwd (Range {anchor = Pos {nChars = 2360, line = 81, col = 43}, position = Pos {nChars = 2365, line = 81, col = 48}})) "comma" [],Rep (Fwd (Range {anchor = Pos {nChars = 2366, line = 81, col = 49}, position = Pos {nChars = 2374, line = 81, col = 57}})) (Call (Fwd (Range {anchor = Pos {nChars = 2366, line = 81, col = 49}, position = Pos {nChars = 2373, line = 81, col = 56}})) "num.nat" [],Nothing) (0,Just 1)]]),Ctor (Fwd (Range {anchor = Pos {nChars = 2382, line = 82, col = 7}, position = Pos {nChars = 2392, line = 82, col = 17}})) "rep-custom" (Call (Fwd (Range {anchor = Pos {nChars = 2394, line = 82, col = 19}, position = Pos {nChars = 2417, line = 82, col = 42}})) "enclose.braces" [Call (Fwd (Range {anchor = Pos {nChars = 2409, line = 82, col = 34}, position = Pos {nChars = 2416, line = 82, col = 41}})) "num.nat" []])]),(Fwd (Range {anchor = Pos {nChars = 2420, line = 83, col = 3}, position = Pos {nChars = 2545, line = 85, col = 19}}),(Fwd (Range {anchor = Pos {nChars = 2420, line = 83, col = 3}, position = Pos {nChars = 2438, line = 83, col = 21}}),"Rule.Rep.commit",["f"]),Alt (Fwd (Range {anchor = Pos {nChars = 2445, line = 84, col = 7}, position = Pos {nChars = 2545, line = 85, col = 19}})) [Ctor (Fwd (Range {anchor = Pos {nChars = 2445, line = 84, col = 7}, position = Pos {nChars = 2456, line = 84, col = 18}})) "rule-commit" (Call (Fwd (Range {anchor = Pos {nChars = 2458, line = 84, col = 20}, position = Pos {nChars = 2526, line = 84, col = 88}})) "enclose.parens" [Seq (Fwd (Range {anchor = Pos {nChars = 2473, line = 84, col = 35}, position = Pos {nChars = 2525, line = 84, col = 87}})) [Call (Fwd (Range {anchor = Pos {nChars = 2473, line = 84, col = 35}, position = Pos {nChars = 2491, line = 84, col = 53}})) "Rule.Seq.allowFlat" [],Rep (Fwd (Range {anchor = Pos {nChars = 2492, line = 84, col = 54}, position = Pos {nChars = 2496, line = 84, col = 58}})) (Call (Fwd (Range {anchor = Pos {nChars = 2492, line = 84, col = 54}, position = Pos {nChars = 2495, line = 84, col = 57}})) "lws" [],Nothing) (1,Nothing),Str (Fwd (Range {anchor = Pos {nChars = 2497, line = 84, col = 59}, position = Pos {nChars = 2501, line = 84, col = 63}})) "->",Rep (Fwd (Range {anchor = Pos {nChars = 2502, line = 84, col = 64}, position = Pos {nChars = 2506, line = 84, col = 68}})) (Call (Fwd (Range {anchor = Pos {nChars = 2502, line = 84, col = 64}, position = Pos {nChars = 2505, line = 84, col = 67}})) "lws" [],Nothing) (1,Nothing),Call (Fwd (Range {anchor = Pos {nChars = 2507, line = 84, col = 69}, position = Pos {nChars = 2525, line = 84, col = 87}})) "Rule.Seq.allowFlat" []]]),Call (Fwd (Range {anchor = Pos {nChars = 2533, line = 85, col = 7}, position = Pos {nChars = 2545, line = 85, col = 19}})) "Rule.Base" [Call (Fwd (Range {anchor = Pos {nChars = 2543, line = 85, col = 17}, position = Pos {nChars = 2544, line = 85, col = 18}})) "f" []]]),(Fwd (Range {anchor = Pos {nChars = 2548, line = 86, col = 3}, position = Pos {nChars = 2644, line = 89, col = 16}}),(Fwd (Range {anchor = Pos {nChars = 2548, line = 86, col = 3}, position = Pos {nChars = 2560, line = 86, col = 15}}),"Rule.Base",["f"]),Alt (Fwd (Range {anchor = Pos {nChars = 2567, line = 87, col = 7}, position = Pos {nChars = 2644, line = 89, col = 16}})) [Ctor (Fwd (Range {anchor = Pos {nChars = 2567, line = 87, col = 7}, position = Pos {nChars = 2577, line = 87, col = 17}})) "rule-group" (Call (Fwd (Range {anchor = Pos {nChars = 2579, line = 87, col = 19}, position = Pos {nChars = 2609, line = 87, col = 49}})) "enclose.parens" [Call (Fwd (Range {anchor = Pos {nChars = 2594, line = 87, col = 34}, position = Pos {nChars = 2608, line = 87, col = 48}})) "Rule.allowFlat" []]),Ctor (Fwd (Range {anchor = Pos {nChars = 2616, line = 88, col = 7}, position = Pos {nChars = 2625, line = 88, col = 16}})) "rule-flat" (Call (Fwd (Range {anchor = Pos {nChars = 2627, line = 88, col = 18}, position = Pos {nChars = 2628, line = 88, col = 19}})) "f" []),Call (Fwd (Range {anchor = Pos {nChars = 2635, line = 89, col = 7}, position = Pos {nChars = 2644, line = 89, col = 16}})) "Rule.prim" []]),(Fwd (Range {anchor = Pos {nChars = 2647, line = 90, col = 3}, position = Pos {nChars = 2695, line = 90, col = 51}}),(Fwd (Range {anchor = Pos {nChars = 2647, line = 90, col = 3}, position = Pos {nChars = 2656, line = 90, col = 12}}),"Rule.Flat",[]),Call (Fwd (Range {anchor = Pos {nChars = 2659, line = 90, col = 15}, position = Pos {nChars = 2695, line = 90, col = 51}})) "enclose" [Char (Fwd (Range {anchor = Pos {nChars = 2667, line = 90, col = 23}, position = Pos {nChars = 2670, line = 90, col = 26}})) '/',Call (Fwd (Range {anchor = Pos {nChars = 2672, line = 90, col = 28}, position = Pos {nChars = 2689, line = 90, col = 45}})) "Rule.disallowFlat" [],Char (Fwd (Range {anchor = Pos {nChars = 2691, line = 90, col = 47}, position = Pos {nChars = 2694, line = 90, col = 50}})) '/']),(Fwd (Range {anchor = Pos {nChars = 2699, line = 92, col = 3}, position = Pos {nChars = 2731, line = 92, col = 35}}),(Fwd (Range {anchor = Pos {nChars = 2699, line = 92, col = 3}, position = Pos {nChars = 2713, line = 92, col = 17}}),"Rule.allowFlat",[]),Call (Fwd (Range {anchor = Pos {nChars = 2716, line = 92, col = 20}, position = Pos {nChars = 2731, line = 92, col = 35}})) "Rule" [Call (Fwd (Range {anchor = Pos {nChars = 2721, line = 92, col = 25}, position = Pos {nChars = 2730, line = 92, col = 34}})) "Rule.Flat" []]),(Fwd (Range {anchor = Pos {nChars = 2734, line = 93, col = 3}, position = Pos {nChars = 2774, line = 93, col = 43}}),(Fwd (Range {anchor = Pos {nChars = 2734, line = 93, col = 3}, position = Pos {nChars = 2752, line = 93, col = 21}}),"Rule.Seq.allowFlat",[]),Call (Fwd (Range {anchor = Pos {nChars = 2755, line = 93, col = 24}, position = Pos {nChars = 2774, line = 93, col = 43}})) "Rule.Seq" [Call (Fwd (Range {anchor = Pos {nChars = 2764, line = 93, col = 33}, position = Pos {nChars = 2773, line = 93, col = 42}})) "Rule.Flat" []]),(Fwd (Range {anchor = Pos {nChars = 2777, line = 94, col = 3}, position = Pos {nChars = 2804, line = 94, col = 30}}),(Fwd (Range {anchor = Pos {nChars = 2777, line = 94, col = 3}, position = Pos {nChars = 2794, line = 94, col = 20}}),"Rule.disallowFlat",[]),Call (Fwd (Range {anchor = Pos {nChars = 2797, line = 94, col = 23}, position = Pos {nChars = 2804, line = 94, col = 30}})) "Rule" [End (Fwd (Range {anchor = Pos {nChars = 2802, line = 94, col = 28}, position = Pos {nChars = 2803, line = 94, col = 29}}))]),(Fwd (Range {anchor = Pos {nChars = 2866, line = 98, col = 3}, position = Pos {nChars = 3147, line = 104, col = 55}}),(Fwd (Range {anchor = Pos {nChars = 2866, line = 98, col = 3}, position = Pos {nChars = 2875, line = 98, col = 12}}),"Rule.prim",[]),Alt (Fwd (Range {anchor = Pos {nChars = 2882, line = 99, col = 7}, position = Pos {nChars = 3147, line = 104, col = 55}})) [Ctor (Fwd (Range {anchor = Pos {nChars = 2882, line = 99, col = 7}, position = Pos {nChars = 2891, line = 99, col = 16}})) "rule-call" (Seq (Fwd (Range {anchor = Pos {nChars = 2893, line = 99, col = 18}, position = Pos {nChars = 2946, line = 99, col = 71}})) [Call (Fwd (Range {anchor = Pos {nChars = 2893, line = 99, col = 18}, position = Pos {nChars = 2902, line = 99, col = 27}})) "Name.rule" [],Rep (Fwd (Range {anchor = Pos {nChars = 2903, line = 99, col = 28}, position = Pos {nChars = 2946, line = 99, col = 71}})) (Call (Fwd (Range {anchor = Pos {nChars = 2903, line = 99, col = 28}, position = Pos {nChars = 2945, line = 99, col = 70}})) "enclose.angles" [Call (Fwd (Range {anchor = Pos {nChars = 2918, line = 99, col = 43}, position = Pos {nChars = 2944, line = 99, col = 69}})) "sep.comma" [Call (Fwd (Range {anchor = Pos {nChars = 2928, line = 99, col = 53}, position = Pos {nChars = 2943, line = 99, col = 68}})) "Rule" [Call (Fwd (Range {anchor = Pos {nChars = 2933, line = 99, col = 58}, position = Pos {nChars = 2942, line = 99, col = 67}})) "Rule.Flat" []]]],Nothing) (0,Just 1)]),Ctor (Fwd (Range {anchor = Pos {nChars = 2953, line = 100, col = 7}, position = Pos {nChars = 2962, line = 100, col = 16}})) "rule-char" (Seq (Fwd (Range {anchor = Pos {nChars = 2964, line = 100, col = 18}, position = Pos {nChars = 2981, line = 100, col = 35}})) [Char (Fwd (Range {anchor = Pos {nChars = 2964, line = 100, col = 18}, position = Pos {nChars = 2968, line = 100, col = 22}})) '\'',Call (Fwd (Range {anchor = Pos {nChars = 2969, line = 100, col = 23}, position = Pos {nChars = 2976, line = 100, col = 30}})) "char.sq" [],Char (Fwd (Range {anchor = Pos {nChars = 2977, line = 100, col = 31}, position = Pos {nChars = 2981, line = 100, col = 35}})) '\'']),Ctor (Fwd (Range {anchor = Pos {nChars = 2988, line = 101, col = 7}, position = Pos {nChars = 2999, line = 101, col = 18}})) "rule-string" (Seq (Fwd (Range {anchor = Pos {nChars = 3001, line = 101, col = 20}, position = Pos {nChars = 3020, line = 101, col = 39}})) [Char (Fwd (Range {anchor = Pos {nChars = 3001, line = 101, col = 20}, position = Pos {nChars = 3005, line = 101, col = 24}})) '"',Rep (Fwd (Range {anchor = Pos {nChars = 3006, line = 101, col = 25}, position = Pos {nChars = 3015, line = 101, col = 34}})) (Call (Fwd (Range {anchor = Pos {nChars = 3006, line = 101, col = 25}, position = Pos {nChars = 3014, line = 101, col = 33}})) "chars.dq" [],Nothing) (0,Nothing),Char (Fwd (Range {anchor = Pos {nChars = 3016, line = 101, col = 35}, position = Pos {nChars = 3020, line = 101, col = 39}})) '"']),Ctor (Fwd (Range {anchor = Pos {nChars = 3027, line = 102, col = 7}, position = Pos {nChars = 3035, line = 102, col = 15}})) "rule-sat" (Seq (Fwd (Range {anchor = Pos {nChars = 3037, line = 102, col = 17}, position = Pos {nChars = 3072, line = 102, col = 52}})) [Alt (Fwd (Range {anchor = Pos {nChars = 3038, line = 102, col = 18}, position = Pos {nChars = 3048, line = 102, col = 28}})) [Str (Fwd (Range {anchor = Pos {nChars = 3038, line = 102, col = 18}, position = Pos {nChars = 3042, line = 102, col = 22}})) "[^",Char (Fwd (Range {anchor = Pos {nChars = 3045, line = 102, col = 25}, position = Pos {nChars = 3048, line = 102, col = 28}})) '['],Rep (Fwd (Range {anchor = Pos {nChars = 3050, line = 102, col = 30}, position = Pos {nChars = 3068, line = 102, col = 48}})) (Call (Fwd (Range {anchor = Pos {nChars = 3050, line = 102, col = 30}, position = Pos {nChars = 3067, line = 102, col = 47}})) "Rule.satisfy.part" [],Nothing) (0,Nothing),Char (Fwd (Range {anchor = Pos {nChars = 3069, line = 102, col = 49}, position = Pos {nChars = 3072, line = 102, col = 52}})) ']']),Ctor (Fwd (Range {anchor = Pos {nChars = 3079, line = 103, col = 7}, position = Pos {nChars = 3087, line = 103, col = 15}})) "rule-end" (Char (Fwd (Range {anchor = Pos {nChars = 3089, line = 103, col = 17}, position = Pos {nChars = 3092, line = 103, col = 20}})) '$'),Ctor (Fwd (Range {anchor = Pos {nChars = 3099, line = 104, col = 7}, position = Pos {nChars = 3108, line = 104, col = 16}})) "rule-void" (Seq (Fwd (Range {anchor = Pos {nChars = 3110, line = 104, col = 18}, position = Pos {nChars = 3147, line = 104, col = 55}})) [Char (Fwd (Range {anchor = Pos {nChars = 3110, line = 104, col = 18}, position = Pos {nChars = 3113, line = 104, col = 21}})) '0',Rep (Fwd (Range {anchor = Pos {nChars = 3114, line = 104, col = 22}, position = Pos {nChars = 3118, line = 104, col = 26}})) (Call (Fwd (Range {anchor = Pos {nChars = 3114, line = 104, col = 22}, position = Pos {nChars = 3117, line = 104, col = 25}})) "lws" [],Nothing) (0,Nothing),Char (Fwd (Range {anchor = Pos {nChars = 3119, line = 104, col = 27}, position = Pos {nChars = 3122, line = 104, col = 30}})) ':',Rep (Fwd (Range {anchor = Pos {nChars = 3123, line = 104, col = 31}, position = Pos {nChars = 3127, line = 104, col = 35}})) (Call (Fwd (Range {anchor = Pos {nChars = 3123, line = 104, col = 31}, position = Pos {nChars = 3126, line = 104, col = 34}})) "lws" [],Nothing) (0,Nothing),Char (Fwd (Range {anchor = Pos {nChars = 3128, line = 104, col = 36}, position = Pos {nChars = 3132, line = 104, col = 40}})) '"',Rep (Fwd (Range {anchor = Pos {nChars = 3133, line = 104, col = 41}, position = Pos {nChars = 3142, line = 104, col = 50}})) (Call (Fwd (Range {anchor = Pos {nChars = 3133, line = 104, col = 41}, position = Pos {nChars = 3141, line = 104, col = 49}})) "chars.dq" [],Nothing) (1,Nothing),Char (Fwd (Range {anchor = Pos {nChars = 3143, line = 104, col = 51}, position = Pos {nChars = 3147, line = 104, col = 55}})) '"'])]),(Fwd (Range {anchor = Pos {nChars = 3151, line = 106, col = 3}, position = Pos {nChars = 3337, line = 111, col = 10}}),(Fwd (Range {anchor = Pos {nChars = 3151, line = 106, col = 3}, position = Pos {nChars = 3168, line = 106, col = 20}}),"Rule.satisfy.part",[]),Alt (Fwd (Range {anchor = Pos {nChars = 3175, line = 107, col = 7}, position = Pos {nChars = 3337, line = 111, col = 10}})) [Ctor (Fwd (Range {anchor = Pos {nChars = 3175, line = 107, col = 7}, position = Pos {nChars = 3184, line = 107, col = 16}})) "sat-range" (Seq (Fwd (Range {anchor = Pos {nChars = 3186, line = 107, col = 18}, position = Pos {nChars = 3226, line = 107, col = 58}})) [Char (Fwd (Range {anchor = Pos {nChars = 3186, line = 107, col = 18}, position = Pos {nChars = 3190, line = 107, col = 22}})) '\'',Call (Fwd (Range {anchor = Pos {nChars = 3191, line = 107, col = 23}, position = Pos {nChars = 3198, line = 107, col = 30}})) "char.sq" [],Char (Fwd (Range {anchor = Pos {nChars = 3199, line = 107, col = 31}, position = Pos {nChars = 3203, line = 107, col = 35}})) '\'',Str (Fwd (Range {anchor = Pos {nChars = 3204, line = 107, col = 36}, position = Pos {nChars = 3208, line = 107, col = 40}})) "..",Char (Fwd (Range {anchor = Pos {nChars = 3209, line = 107, col = 41}, position = Pos {nChars = 3213, line = 107, col = 45}})) '\'',Call (Fwd (Range {anchor = Pos {nChars = 3214, line = 107, col = 46}, position = Pos {nChars = 3221, line = 107, col = 53}})) "char.sq" [],Char (Fwd (Range {anchor = Pos {nChars = 3222, line = 107, col = 54}, position = Pos {nChars = 3226, line = 107, col = 58}})) '\'']),Ctor (Fwd (Range {anchor = Pos {nChars = 3233, line = 108, col = 7}, position = Pos {nChars = 3241, line = 108, col = 15}})) "sat-char" (Seq (Fwd (Range {anchor = Pos {nChars = 3243, line = 108, col = 17}, position = Pos {nChars = 3260, line = 108, col = 34}})) [Char (Fwd (Range {anchor = Pos {nChars = 3243, line = 108, col = 17}, position = Pos {nChars = 3247, line = 108, col = 21}})) '\'',Call (Fwd (Range {anchor = Pos {nChars = 3248, line = 108, col = 22}, position = Pos {nChars = 3255, line = 108, col = 29}})) "char.sq" [],Char (Fwd (Range {anchor = Pos {nChars = 3256, line = 108, col = 30}, position = Pos {nChars = 3260, line = 108, col = 34}})) '\'']),Ctor (Fwd (Range {anchor = Pos {nChars = 3267, line = 109, col = 7}, position = Pos {nChars = 3274, line = 109, col = 14}})) "sat-var" (Call (Fwd (Range {anchor = Pos {nChars = 3276, line = 109, col = 16}, position = Pos {nChars = 3301, line = 109, col = 41}})) "enclose.colon" [Call (Fwd (Range {anchor = Pos {nChars = 3290, line = 109, col = 30}, position = Pos {nChars = 3300, line = 109, col = 40}})) "Name.class" []]),Flat (Fwd (Range {anchor = Pos {nChars = 3308, line = 110, col = 7}, position = Pos {nChars = 3327, line = 110, col = 26}})) (Rep (Fwd (Range {anchor = Pos {nChars = 3310, line = 110, col = 9}, position = Pos {nChars = 3325, line = 110, col = 24}})) (Sat (Fwd (Range {anchor = Pos {nChars = 3310, line = 110, col = 9}, position = Pos {nChars = 3324, line = 110, col = 23}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 3311, line = 110, col = 10}, position = Pos {nChars = 3323, line = 110, col = 22}})) "char.brack"],Nothing) (1,Nothing)),Call (Fwd (Range {anchor = Pos {nChars = 3334, line = 111, col = 7}, position = Pos {nChars = 3337, line = 111, col = 10}})) "lws" []]),(Fwd (Range {anchor = Pos {nChars = 3353, line = 115, col = 3}, position = Pos {nChars = 3413, line = 115, col = 63}}),(Fwd (Range {anchor = Pos {nChars = 3353, line = 115, col = 3}, position = Pos {nChars = 3358, line = 115, col = 8}}),"Class",[]),Seq (Fwd (Range {anchor = Pos {nChars = 3361, line = 115, col = 11}, position = Pos {nChars = 3413, line = 115, col = 63}})) [Call (Fwd (Range {anchor = Pos {nChars = 3361, line = 115, col = 11}, position = Pos {nChars = 3371, line = 115, col = 21}})) "Class.term" [],Rep (Fwd (Range {anchor = Pos {nChars = 3372, line = 115, col = 22}, position = Pos {nChars = 3413, line = 115, col = 63}})) (Seq (Fwd (Range {anchor = Pos {nChars = 3373, line = 115, col = 23}, position = Pos {nChars = 3392, line = 115, col = 42}})) [Rep (Fwd (Range {anchor = Pos {nChars = 3373, line = 115, col = 23}, position = Pos {nChars = 3377, line = 115, col = 27}})) (Call (Fwd (Range {anchor = Pos {nChars = 3373, line = 115, col = 23}, position = Pos {nChars = 3376, line = 115, col = 26}})) "lws" [],Nothing) (1,Nothing),Call (Fwd (Range {anchor = Pos {nChars = 3378, line = 115, col = 28}, position = Pos {nChars = 3392, line = 115, col = 42}})) "Class.operator" []],Just (Seq (Fwd (Range {anchor = Pos {nChars = 3396, line = 115, col = 46}, position = Pos {nChars = 3411, line = 115, col = 61}})) [Rep (Fwd (Range {anchor = Pos {nChars = 3396, line = 115, col = 46}, position = Pos {nChars = 3400, line = 115, col = 50}})) (Call (Fwd (Range {anchor = Pos {nChars = 3396, line = 115, col = 46}, position = Pos {nChars = 3399, line = 115, col = 49}})) "lws" [],Nothing) (1,Nothing),Call (Fwd (Range {anchor = Pos {nChars = 3401, line = 115, col = 51}, position = Pos {nChars = 3411, line = 115, col = 61}})) "Class.term" []])) (0,Nothing)]),(Fwd (Range {anchor = Pos {nChars = 3418, line = 117, col = 3}, position = Pos {nChars = 3444, line = 117, col = 29}}),(Fwd (Range {anchor = Pos {nChars = 3418, line = 117, col = 3}, position = Pos {nChars = 3432, line = 117, col = 17}}),"Class.operator",[]),Alt (Fwd (Range {anchor = Pos {nChars = 3435, line = 117, col = 20}, position = Pos {nChars = 3444, line = 117, col = 29}})) [Char (Fwd (Range {anchor = Pos {nChars = 3435, line = 117, col = 20}, position = Pos {nChars = 3438, line = 117, col = 23}})) '|',Char (Fwd (Range {anchor = Pos {nChars = 3441, line = 117, col = 26}, position = Pos {nChars = 3444, line = 117, col = 29}})) '-']),(Fwd (Range {anchor = Pos {nChars = 3447, line = 118, col = 3}, position = Pos {nChars = 3633, line = 122, col = 37}}),(Fwd (Range {anchor = Pos {nChars = 3447, line = 118, col = 3}, position = Pos {nChars = 3457, line = 118, col = 13}}),"Class.term",[]),Alt (Fwd (Range {anchor = Pos {nChars = 3464, line = 119, col = 7}, position = Pos {nChars = 3633, line = 122, col = 37}})) [Ctor (Fwd (Range {anchor = Pos {nChars = 3464, line = 119, col = 7}, position = Pos {nChars = 3473, line = 119, col = 16}})) "class-var" (Call (Fwd (Range {anchor = Pos {nChars = 3475, line = 119, col = 18}, position = Pos {nChars = 3500, line = 119, col = 43}})) "enclose.colon" [Call (Fwd (Range {anchor = Pos {nChars = 3489, line = 119, col = 32}, position = Pos {nChars = 3499, line = 119, col = 42}})) "Name.class" []]),Ctor (Fwd (Range {anchor = Pos {nChars = 3507, line = 120, col = 7}, position = Pos {nChars = 3518, line = 120, col = 18}})) "class-range" (Seq (Fwd (Range {anchor = Pos {nChars = 3520, line = 120, col = 20}, position = Pos {nChars = 3560, line = 120, col = 60}})) [Char (Fwd (Range {anchor = Pos {nChars = 3520, line = 120, col = 20}, position = Pos {nChars = 3524, line = 120, col = 24}})) '\'',Call (Fwd (Range {anchor = Pos {nChars = 3525, line = 120, col = 25}, position = Pos {nChars = 3532, line = 120, col = 32}})) "char.sq" [],Char (Fwd (Range {anchor = Pos {nChars = 3533, line = 120, col = 33}, position = Pos {nChars = 3537, line = 120, col = 37}})) '\'',Str (Fwd (Range {anchor = Pos {nChars = 3538, line = 120, col = 38}, position = Pos {nChars = 3542, line = 120, col = 42}})) "..",Char (Fwd (Range {anchor = Pos {nChars = 3543, line = 120, col = 43}, position = Pos {nChars = 3547, line = 120, col = 47}})) '\'',Call (Fwd (Range {anchor = Pos {nChars = 3548, line = 120, col = 48}, position = Pos {nChars = 3555, line = 120, col = 55}})) "char.sq" [],Char (Fwd (Range {anchor = Pos {nChars = 3556, line = 120, col = 56}, position = Pos {nChars = 3560, line = 120, col = 60}})) '\'']),Ctor (Fwd (Range {anchor = Pos {nChars = 3567, line = 121, col = 7}, position = Pos {nChars = 3577, line = 121, col = 17}})) "class-char" (Seq (Fwd (Range {anchor = Pos {nChars = 3579, line = 121, col = 19}, position = Pos {nChars = 3596, line = 121, col = 36}})) [Char (Fwd (Range {anchor = Pos {nChars = 3579, line = 121, col = 19}, position = Pos {nChars = 3583, line = 121, col = 23}})) '\'',Call (Fwd (Range {anchor = Pos {nChars = 3584, line = 121, col = 24}, position = Pos {nChars = 3591, line = 121, col = 31}})) "char.sq" [],Char (Fwd (Range {anchor = Pos {nChars = 3592, line = 121, col = 32}, position = Pos {nChars = 3596, line = 121, col = 36}})) '\'']),Ctor (Fwd (Range {anchor = Pos {nChars = 3603, line = 122, col = 7}, position = Pos {nChars = 3612, line = 122, col = 16}})) "class-set" (Seq (Fwd (Range {anchor = Pos {nChars = 3614, line = 122, col = 18}, position = Pos {nChars = 3633, line = 122, col = 37}})) [Char (Fwd (Range {anchor = Pos {nChars = 3614, line = 122, col = 18}, position = Pos {nChars = 3618, line = 122, col = 22}})) '"',Rep (Fwd (Range {anchor = Pos {nChars = 3619, line = 122, col = 23}, position = Pos {nChars = 3628, line = 122, col = 32}})) (Call (Fwd (Range {anchor = Pos {nChars = 3619, line = 122, col = 23}, position = Pos {nChars = 3627, line = 122, col = 31}})) "chars.dq" [],Nothing) (0,Nothing),Char (Fwd (Range {anchor = Pos {nChars = 3629, line = 122, col = 33}, position = Pos {nChars = 3633, line = 122, col = 37}})) '"'])]),(Fwd (Range {anchor = Pos {nChars = 3671, line = 126, col = 3}, position = Pos {nChars = 3714, line = 128, col = 18}}),(Fwd (Range {anchor = Pos {nChars = 3671, line = 126, col = 3}, position = Pos {nChars = 3678, line = 126, col = 10}}),"char.sq",[]),Alt (Fwd (Range {anchor = Pos {nChars = 3685, line = 127, col = 7}, position = Pos {nChars = 3714, line = 128, col = 18}})) [Sat (Fwd (Range {anchor = Pos {nChars = 3685, line = 127, col = 7}, position = Pos {nChars = 3696, line = 127, col = 18}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 3686, line = 127, col = 8}, position = Pos {nChars = 3695, line = 127, col = 17}})) "char.sq"],Call (Fwd (Range {anchor = Pos {nChars = 3703, line = 128, col = 7}, position = Pos {nChars = 3714, line = 128, col = 18}})) "char.escape" []]),(Fwd (Range {anchor = Pos {nChars = 3751, line = 131, col = 3}, position = Pos {nChars = 3798, line = 133, col = 18}}),(Fwd (Range {anchor = Pos {nChars = 3751, line = 131, col = 3}, position = Pos {nChars = 3759, line = 131, col = 11}}),"chars.dq",[]),Alt (Fwd (Range {anchor = Pos {nChars = 3766, line = 132, col = 7}, position = Pos {nChars = 3798, line = 133, col = 18}})) [Flat (Fwd (Range {anchor = Pos {nChars = 3766, line = 132, col = 7}, position = Pos {nChars = 3780, line = 132, col = 21}})) (Rep (Fwd (Range {anchor = Pos {nChars = 3767, line = 132, col = 8}, position = Pos {nChars = 3779, line = 132, col = 20}})) (Sat (Fwd (Range {anchor = Pos {nChars = 3767, line = 132, col = 8}, position = Pos {nChars = 3778, line = 132, col = 19}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 3768, line = 132, col = 9}, position = Pos {nChars = 3777, line = 132, col = 18}})) "char.dq"],Nothing) (1,Nothing)),Call (Fwd (Range {anchor = Pos {nChars = 3787, line = 133, col = 7}, position = Pos {nChars = 3798, line = 133, col = 18}})) "char.escape" []]),(Fwd (Range {anchor = Pos {nChars = 3883, line = 138, col = 3}, position = Pos {nChars = 4217, line = 146, col = 49}}),(Fwd (Range {anchor = Pos {nChars = 3883, line = 138, col = 3}, position = Pos {nChars = 3894, line = 138, col = 14}}),"char.escape",[]),Alt (Fwd (Range {anchor = Pos {nChars = 3901, line = 139, col = 7}, position = Pos {nChars = 4217, line = 146, col = 49}})) [Ctor (Fwd (Range {anchor = Pos {nChars = 3901, line = 139, col = 7}, position = Pos {nChars = 3912, line = 139, col = 18}})) "char-escape" (Flat (Fwd (Range {anchor = Pos {nChars = 3914, line = 139, col = 20}, position = Pos {nChars = 3940, line = 139, col = 46}})) (Seq (Fwd (Range {anchor = Pos {nChars = 3916, line = 139, col = 22}, position = Pos {nChars = 3938, line = 139, col = 44}})) [Char (Fwd (Range {anchor = Pos {nChars = 3916, line = 139, col = 22}, position = Pos {nChars = 3920, line = 139, col = 26}})) '\\',Sat (Fwd (Range {anchor = Pos {nChars = 3921, line = 139, col = 27}, position = Pos {nChars = 3938, line = 139, col = 44}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 3922, line = 139, col = 28}, position = Pos {nChars = 3937, line = 139, col = 43}})) "char.escape.c"]])),Ctor (Fwd (Range {anchor = Pos {nChars = 3947, line = 140, col = 7}, position = Pos {nChars = 3958, line = 140, col = 18}})) "char-escape" (Seq (Fwd (Range {anchor = Pos {nChars = 3960, line = 140, col = 20}, position = Pos {nChars = 3984, line = 140, col = 44}})) [Str (Fwd (Range {anchor = Pos {nChars = 3960, line = 140, col = 20}, position = Pos {nChars = 3965, line = 140, col = 25}})) "\\x",Flat (Fwd (Range {anchor = Pos {nChars = 3966, line = 140, col = 26}, position = Pos {nChars = 3984, line = 140, col = 44}})) (Rep (Fwd (Range {anchor = Pos {nChars = 3967, line = 140, col = 27}, position = Pos {nChars = 3983, line = 140, col = 43}})) (Sat (Fwd (Range {anchor = Pos {nChars = 3967, line = 140, col = 27}, position = Pos {nChars = 3980, line = 140, col = 40}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 3968, line = 140, col = 28}, position = Pos {nChars = 3979, line = 140, col = 39}})) "digit.hex"],Nothing) (2,Just 2))]),Ctor (Fwd (Range {anchor = Pos {nChars = 3991, line = 141, col = 7}, position = Pos {nChars = 4002, line = 141, col = 18}})) "char-escape" (Seq (Fwd (Range {anchor = Pos {nChars = 4004, line = 141, col = 20}, position = Pos {nChars = 4028, line = 141, col = 44}})) [Str (Fwd (Range {anchor = Pos {nChars = 4004, line = 141, col = 20}, position = Pos {nChars = 4009, line = 141, col = 25}})) "\\u",Flat (Fwd (Range {anchor = Pos {nChars = 4010, line = 141, col = 26}, position = Pos {nChars = 4028, line = 141, col = 44}})) (Rep (Fwd (Range {anchor = Pos {nChars = 4011, line = 141, col = 27}, position = Pos {nChars = 4027, line = 141, col = 43}})) (Sat (Fwd (Range {anchor = Pos {nChars = 4011, line = 141, col = 27}, position = Pos {nChars = 4024, line = 141, col = 40}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 4012, line = 141, col = 28}, position = Pos {nChars = 4023, line = 141, col = 39}})) "digit.hex"],Nothing) (4,Just 4))]),Ctor (Fwd (Range {anchor = Pos {nChars = 4035, line = 142, col = 7}, position = Pos {nChars = 4046, line = 142, col = 18}})) "char-escape" (Seq (Fwd (Range {anchor = Pos {nChars = 4048, line = 142, col = 20}, position = Pos {nChars = 4168, line = 145, col = 24}})) [Str (Fwd (Range {anchor = Pos {nChars = 4048, line = 142, col = 20}, position = Pos {nChars = 4053, line = 142, col = 25}})) "\\U",Flat (Fwd (Range {anchor = Pos {nChars = 4076, line = 143, col = 23}, position = Pos {nChars = 4168, line = 145, col = 24}})) (Alt (Fwd (Range {anchor = Pos {nChars = 4078, line = 143, col = 25}, position = Pos {nChars = 4144, line = 144, col = 46}})) [Seq (Fwd (Range {anchor = Pos {nChars = 4078, line = 143, col = 25}, position = Pos {nChars = 4098, line = 143, col = 45}})) [Char (Fwd (Range {anchor = Pos {nChars = 4078, line = 143, col = 25}, position = Pos {nChars = 4081, line = 143, col = 28}})) '0',Rep (Fwd (Range {anchor = Pos {nChars = 4082, line = 143, col = 29}, position = Pos {nChars = 4098, line = 143, col = 45}})) (Sat (Fwd (Range {anchor = Pos {nChars = 4082, line = 143, col = 29}, position = Pos {nChars = 4095, line = 143, col = 42}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 4083, line = 143, col = 30}, position = Pos {nChars = 4094, line = 143, col = 41}})) "digit.hex"],Nothing) (5,Just 5)],Seq (Fwd (Range {anchor = Pos {nChars = 4123, line = 144, col = 25}, position = Pos {nChars = 4144, line = 144, col = 46}})) [Str (Fwd (Range {anchor = Pos {nChars = 4123, line = 144, col = 25}, position = Pos {nChars = 4127, line = 144, col = 29}})) "10",Rep (Fwd (Range {anchor = Pos {nChars = 4128, line = 144, col = 30}, position = Pos {nChars = 4144, line = 144, col = 46}})) (Sat (Fwd (Range {anchor = Pos {nChars = 4128, line = 144, col = 30}, position = Pos {nChars = 4141, line = 144, col = 43}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 4129, line = 144, col = 31}, position = Pos {nChars = 4140, line = 144, col = 42}})) "digit.hex"],Nothing) (4,Just 4)]])]),Ctor (Fwd (Range {anchor = Pos {nChars = 4175, line = 146, col = 7}, position = Pos {nChars = 4186, line = 146, col = 18}})) "char-escape" (Seq (Fwd (Range {anchor = Pos {nChars = 4188, line = 146, col = 20}, position = Pos {nChars = 4217, line = 146, col = 49}})) [Char (Fwd (Range {anchor = Pos {nChars = 4188, line = 146, col = 20}, position = Pos {nChars = 4192, line = 146, col = 24}})) '\\',Sat (Fwd (Range {anchor = Pos {nChars = 4193, line = 146, col = 25}, position = Pos {nChars = 4217, line = 146, col = 49}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 4194, line = 146, col = 26}, position = Pos {nChars = 4216, line = 146, col = 48}})) "char.escape.passthru"]])]),(Fwd (Range {anchor = Pos {nChars = 4330, line = 152, col = 3}, position = Pos {nChars = 4391, line = 152, col = 64}}),(Fwd (Range {anchor = Pos {nChars = 4330, line = 152, col = 3}, position = Pos {nChars = 4339, line = 152, col = 12}}),"Name.rule",[]),Flat (Fwd (Range {anchor = Pos {nChars = 4342, line = 152, col = 15}, position = Pos {nChars = 4391, line = 152, col = 64}})) (Call (Fwd (Range {anchor = Pos {nChars = 4344, line = 152, col = 17}, position = Pos {nChars = 4389, line = 152, col = 62}})) "sep.dot" [Seq (Fwd (Range {anchor = Pos {nChars = 4352, line = 152, col = 25}, position = Pos {nChars = 4388, line = 152, col = 61}})) [Sat (Fwd (Range {anchor = Pos {nChars = 4352, line = 152, col = 25}, position = Pos {nChars = 4367, line = 152, col = 40}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 4353, line = 152, col = 26}, position = Pos {nChars = 4366, line = 152, col = 39}})) "ascii.alpha"],Rep (Fwd (Range {anchor = Pos {nChars = 4368, line = 152, col = 41}, position = Pos {nChars = 4388, line = 152, col = 61}})) (Sat (Fwd (Range {anchor = Pos {nChars = 4368, line = 152, col = 41}, position = Pos {nChars = 4387, line = 152, col = 60}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 4369, line = 152, col = 42}, position = Pos {nChars = 4386, line = 152, col = 59}})) "ascii.alpha-num"],Nothing) (0,Nothing)]])),(Fwd (Range {anchor = Pos {nChars = 4396, line = 154, col = 3}, position = Pos {nChars = 4449, line = 154, col = 56}}),(Fwd (Range {anchor = Pos {nChars = 4396, line = 154, col = 3}, position = Pos {nChars = 4406, line = 154, col = 13}}),"Name.param",[]),Flat (Fwd (Range {anchor = Pos {nChars = 4409, line = 154, col = 16}, position = Pos {nChars = 4449, line = 154, col = 56}})) (Seq (Fwd (Range {anchor = Pos {nChars = 4411, line = 154, col = 18}, position = Pos {nChars = 4447, line = 154, col = 54}})) [Sat (Fwd (Range {anchor = Pos {nChars = 4411, line = 154, col = 18}, position = Pos {nChars = 4426, line = 154, col = 33}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 4412, line = 154, col = 19}, position = Pos {nChars = 4425, line = 154, col = 32}})) "ascii.alpha"],Rep (Fwd (Range {anchor = Pos {nChars = 4427, line = 154, col = 34}, position = Pos {nChars = 4447, line = 154, col = 54}})) (Sat (Fwd (Range {anchor = Pos {nChars = 4427, line = 154, col = 34}, position = Pos {nChars = 4446, line = 154, col = 53}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 4428, line = 154, col = 35}, position = Pos {nChars = 4445, line = 154, col = 52}})) "ascii.alpha-num"],Nothing) (0,Nothing)])),(Fwd (Range {anchor = Pos {nChars = 4518, line = 157, col = 3}, position = Pos {nChars = 4580, line = 157, col = 65}}),(Fwd (Range {anchor = Pos {nChars = 4518, line = 157, col = 3}, position = Pos {nChars = 4527, line = 157, col = 12}}),"Name.ctor",[]),Flat (Fwd (Range {anchor = Pos {nChars = 4530, line = 157, col = 15}, position = Pos {nChars = 4580, line = 157, col = 65}})) (Call (Fwd (Range {anchor = Pos {nChars = 4532, line = 157, col = 17}, position = Pos {nChars = 4578, line = 157, col = 63}})) "sep.dash" [Seq (Fwd (Range {anchor = Pos {nChars = 4541, line = 157, col = 26}, position = Pos {nChars = 4577, line = 157, col = 62}})) [Sat (Fwd (Range {anchor = Pos {nChars = 4541, line = 157, col = 26}, position = Pos {nChars = 4556, line = 157, col = 41}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 4542, line = 157, col = 27}, position = Pos {nChars = 4555, line = 157, col = 40}})) "ascii.alpha"],Rep (Fwd (Range {anchor = Pos {nChars = 4557, line = 157, col = 42}, position = Pos {nChars = 4577, line = 157, col = 62}})) (Sat (Fwd (Range {anchor = Pos {nChars = 4557, line = 157, col = 42}, position = Pos {nChars = 4576, line = 157, col = 61}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 4558, line = 157, col = 43}, position = Pos {nChars = 4575, line = 157, col = 60}})) "ascii.alpha-num"],Nothing) (0,Nothing)]])),(Fwd (Range {anchor = Pos {nChars = 4584, line = 159, col = 3}, position = Pos {nChars = 4650, line = 159, col = 69}}),(Fwd (Range {anchor = Pos {nChars = 4584, line = 159, col = 3}, position = Pos {nChars = 4594, line = 159, col = 13}}),"Name.class",[]),Flat (Fwd (Range {anchor = Pos {nChars = 4597, line = 159, col = 16}, position = Pos {nChars = 4650, line = 159, col = 69}})) (Call (Fwd (Range {anchor = Pos {nChars = 4599, line = 159, col = 18}, position = Pos {nChars = 4648, line = 159, col = 67}})) "sep.dot" [Seq (Fwd (Range {anchor = Pos {nChars = 4607, line = 159, col = 26}, position = Pos {nChars = 4647, line = 159, col = 66}})) [Sat (Fwd (Range {anchor = Pos {nChars = 4607, line = 159, col = 26}, position = Pos {nChars = 4622, line = 159, col = 41}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 4608, line = 159, col = 27}, position = Pos {nChars = 4621, line = 159, col = 40}})) "ascii.alpha"],Rep (Fwd (Range {anchor = Pos {nChars = 4623, line = 159, col = 42}, position = Pos {nChars = 4647, line = 159, col = 66}})) (Sat (Fwd (Range {anchor = Pos {nChars = 4623, line = 159, col = 42}, position = Pos {nChars = 4646, line = 159, col = 65}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 4624, line = 159, col = 43}, position = Pos {nChars = 4641, line = 159, col = 60}})) "ascii.alpha-num",SatChar (Fwd (Range {anchor = Pos {nChars = 4641, line = 159, col = 60}, position = Pos {nChars = 4645, line = 159, col = 64}})) '-'],Nothing) (0,Nothing)]])),(Fwd (Range {anchor = Pos {nChars = 4678, line = 163, col = 3}, position = Pos {nChars = 4710, line = 163, col = 35}}),(Fwd (Range {anchor = Pos {nChars = 4678, line = 163, col = 3}, position = Pos {nChars = 4692, line = 163, col = 17}}),"enclose",["o","i","c"]),Seq (Fwd (Range {anchor = Pos {nChars = 4695, line = 163, col = 20}, position = Pos {nChars = 4710, line = 163, col = 35}})) [Call (Fwd (Range {anchor = Pos {nChars = 4695, line = 163, col = 20}, position = Pos {nChars = 4696, line = 163, col = 21}})) "o" [],Rep (Fwd (Range {anchor = Pos {nChars = 4697, line = 163, col = 22}, position = Pos {nChars = 4701, line = 163, col = 26}})) (Call (Fwd (Range {anchor = Pos {nChars = 4697, line = 163, col = 22}, position = Pos {nChars = 4700, line = 163, col = 25}})) "lws" [],Nothing) (0,Nothing),Call (Fwd (Range {anchor = Pos {nChars = 4702, line = 163, col = 27}, position = Pos {nChars = 4703, line = 163, col = 28}})) "i" [],Rep (Fwd (Range {anchor = Pos {nChars = 4704, line = 163, col = 29}, position = Pos {nChars = 4708, line = 163, col = 33}})) (Call (Fwd (Range {anchor = Pos {nChars = 4704, line = 163, col = 29}, position = Pos {nChars = 4707, line = 163, col = 32}})) "lws" [],Nothing) (0,Nothing),Call (Fwd (Range {anchor = Pos {nChars = 4709, line = 163, col = 34}, position = Pos {nChars = 4710, line = 163, col = 35}})) "c" []]),(Fwd (Range {anchor = Pos {nChars = 4715, line = 165, col = 3}, position = Pos {nChars = 4753, line = 165, col = 41}}),(Fwd (Range {anchor = Pos {nChars = 4715, line = 165, col = 3}, position = Pos {nChars = 4732, line = 165, col = 20}}),"enclose.parens",["i"]),Call (Fwd (Range {anchor = Pos {nChars = 4735, line = 165, col = 23}, position = Pos {nChars = 4753, line = 165, col = 41}})) "enclose" [Char (Fwd (Range {anchor = Pos {nChars = 4743, line = 165, col = 31}, position = Pos {nChars = 4746, line = 165, col = 34}})) '(',Call (Fwd (Range {anchor = Pos {nChars = 4747, line = 165, col = 35}, position = Pos {nChars = 4748, line = 165, col = 36}})) "i" [],Char (Fwd (Range {anchor = Pos {nChars = 4749, line = 165, col = 37}, position = Pos {nChars = 4752, line = 165, col = 40}})) ')']),(Fwd (Range {anchor = Pos {nChars = 4756, line = 166, col = 3}, position = Pos {nChars = 4794, line = 166, col = 41}}),(Fwd (Range {anchor = Pos {nChars = 4756, line = 166, col = 3}, position = Pos {nChars = 4773, line = 166, col = 20}}),"enclose.braces",["i"]),Call (Fwd (Range {anchor = Pos {nChars = 4776, line = 166, col = 23}, position = Pos {nChars = 4794, line = 166, col = 41}})) "enclose" [Char (Fwd (Range {anchor = Pos {nChars = 4784, line = 166, col = 31}, position = Pos {nChars = 4787, line = 166, col = 34}})) '{',Call (Fwd (Range {anchor = Pos {nChars = 4788, line = 166, col = 35}, position = Pos {nChars = 4789, line = 166, col = 36}})) "i" [],Char (Fwd (Range {anchor = Pos {nChars = 4790, line = 166, col = 37}, position = Pos {nChars = 4793, line = 166, col = 40}})) '}']),(Fwd (Range {anchor = Pos {nChars = 4797, line = 167, col = 3}, position = Pos {nChars = 4835, line = 167, col = 41}}),(Fwd (Range {anchor = Pos {nChars = 4797, line = 167, col = 3}, position = Pos {nChars = 4814, line = 167, col = 20}}),"enclose.angles",["i"]),Call (Fwd (Range {anchor = Pos {nChars = 4817, line = 167, col = 23}, position = Pos {nChars = 4835, line = 167, col = 41}})) "enclose" [Char (Fwd (Range {anchor = Pos {nChars = 4825, line = 167, col = 31}, position = Pos {nChars = 4828, line = 167, col = 34}})) '<',Call (Fwd (Range {anchor = Pos {nChars = 4829, line = 167, col = 35}, position = Pos {nChars = 4830, line = 167, col = 36}})) "i" [],Char (Fwd (Range {anchor = Pos {nChars = 4831, line = 167, col = 37}, position = Pos {nChars = 4834, line = 167, col = 40}})) '>']),(Fwd (Range {anchor = Pos {nChars = 4838, line = 168, col = 3}, position = Pos {nChars = 4875, line = 168, col = 40}}),(Fwd (Range {anchor = Pos {nChars = 4838, line = 168, col = 3}, position = Pos {nChars = 4854, line = 168, col = 19}}),"enclose.colon",["i"]),Call (Fwd (Range {anchor = Pos {nChars = 4857, line = 168, col = 22}, position = Pos {nChars = 4875, line = 168, col = 40}})) "enclose" [Char (Fwd (Range {anchor = Pos {nChars = 4865, line = 168, col = 30}, position = Pos {nChars = 4868, line = 168, col = 33}})) ':',Call (Fwd (Range {anchor = Pos {nChars = 4869, line = 168, col = 34}, position = Pos {nChars = 4870, line = 168, col = 35}})) "i" [],Char (Fwd (Range {anchor = Pos {nChars = 4871, line = 168, col = 36}, position = Pos {nChars = 4874, line = 168, col = 39}})) ':']),(Fwd (Range {anchor = Pos {nChars = 4879, line = 170, col = 3}, position = Pos {nChars = 4900, line = 170, col = 24}}),(Fwd (Range {anchor = Pos {nChars = 4879, line = 170, col = 3}, position = Pos {nChars = 4884, line = 170, col = 8}}),"comma",[]),Seq (Fwd (Range {anchor = Pos {nChars = 4887, line = 170, col = 11}, position = Pos {nChars = 4900, line = 170, col = 24}})) [Rep (Fwd (Range {anchor = Pos {nChars = 4887, line = 170, col = 11}, position = Pos {nChars = 4891, line = 170, col = 15}})) (Call (Fwd (Range {anchor = Pos {nChars = 4887, line = 170, col = 11}, position = Pos {nChars = 4890, line = 170, col = 14}})) "lws" [],Nothing) (0,Nothing),Char (Fwd (Range {anchor = Pos {nChars = 4892, line = 170, col = 16}, position = Pos {nChars = 4895, line = 170, col = 19}})) ',',Rep (Fwd (Range {anchor = Pos {nChars = 4896, line = 170, col = 20}, position = Pos {nChars = 4900, line = 170, col = 24}})) (Call (Fwd (Range {anchor = Pos {nChars = 4896, line = 170, col = 20}, position = Pos {nChars = 4899, line = 170, col = 23}})) "lws" [],Nothing) (0,Nothing)]),(Fwd (Range {anchor = Pos {nChars = 4903, line = 171, col = 3}, position = Pos {nChars = 4924, line = 171, col = 24}}),(Fwd (Range {anchor = Pos {nChars = 4903, line = 171, col = 3}, position = Pos {nChars = 4908, line = 171, col = 8}}),"colon",[]),Seq (Fwd (Range {anchor = Pos {nChars = 4911, line = 171, col = 11}, position = Pos {nChars = 4924, line = 171, col = 24}})) [Rep (Fwd (Range {anchor = Pos {nChars = 4911, line = 171, col = 11}, position = Pos {nChars = 4915, line = 171, col = 15}})) (Call (Fwd (Range {anchor = Pos {nChars = 4911, line = 171, col = 11}, position = Pos {nChars = 4914, line = 171, col = 14}})) "lws" [],Nothing) (0,Nothing),Char (Fwd (Range {anchor = Pos {nChars = 4916, line = 171, col = 16}, position = Pos {nChars = 4919, line = 171, col = 19}})) ':',Rep (Fwd (Range {anchor = Pos {nChars = 4920, line = 171, col = 20}, position = Pos {nChars = 4924, line = 171, col = 24}})) (Call (Fwd (Range {anchor = Pos {nChars = 4920, line = 171, col = 20}, position = Pos {nChars = 4923, line = 171, col = 23}})) "lws" [],Nothing) (1,Nothing)]),(Fwd (Range {anchor = Pos {nChars = 4928, line = 173, col = 3}, position = Pos {nChars = 4953, line = 173, col = 28}}),(Fwd (Range {anchor = Pos {nChars = 4928, line = 173, col = 3}, position = Pos {nChars = 4939, line = 173, col = 14}}),"sep.by",["e","s"]),Seq (Fwd (Range {anchor = Pos {nChars = 4942, line = 173, col = 17}, position = Pos {nChars = 4953, line = 173, col = 28}})) [Call (Fwd (Range {anchor = Pos {nChars = 4942, line = 173, col = 17}, position = Pos {nChars = 4943, line = 173, col = 18}})) "e" [],Rep (Fwd (Range {anchor = Pos {nChars = 4944, line = 173, col = 19}, position = Pos {nChars = 4953, line = 173, col = 28}})) (Call (Fwd (Range {anchor = Pos {nChars = 4945, line = 173, col = 20}, position = Pos {nChars = 4946, line = 173, col = 21}})) "s" [],Just (Call (Fwd (Range {anchor = Pos {nChars = 4950, line = 173, col = 25}, position = Pos {nChars = 4951, line = 173, col = 26}})) "e" [])) (0,Nothing)]),(Fwd (Range {anchor = Pos {nChars = 4958, line = 175, col = 3}, position = Pos {nChars = 4988, line = 175, col = 33}}),(Fwd (Range {anchor = Pos {nChars = 4958, line = 175, col = 3}, position = Pos {nChars = 4970, line = 175, col = 15}}),"sep.comma",["e"]),Call (Fwd (Range {anchor = Pos {nChars = 4973, line = 175, col = 18}, position = Pos {nChars = 4988, line = 175, col = 33}})) "sep.by" [Call (Fwd (Range {anchor = Pos {nChars = 4980, line = 175, col = 25}, position = Pos {nChars = 4981, line = 175, col = 26}})) "e" [],Call (Fwd (Range {anchor = Pos {nChars = 4982, line = 175, col = 27}, position = Pos {nChars = 4987, line = 175, col = 32}})) "comma" []]),(Fwd (Range {anchor = Pos {nChars = 4991, line = 176, col = 3}, position = Pos {nChars = 5017, line = 176, col = 29}}),(Fwd (Range {anchor = Pos {nChars = 4991, line = 176, col = 3}, position = Pos {nChars = 5001, line = 176, col = 13}}),"sep.dot",["e"]),Call (Fwd (Range {anchor = Pos {nChars = 5004, line = 176, col = 16}, position = Pos {nChars = 5017, line = 176, col = 29}})) "sep.by" [Call (Fwd (Range {anchor = Pos {nChars = 5011, line = 176, col = 23}, position = Pos {nChars = 5012, line = 176, col = 24}})) "e" [],Char (Fwd (Range {anchor = Pos {nChars = 5013, line = 176, col = 25}, position = Pos {nChars = 5016, line = 176, col = 28}})) '.']),(Fwd (Range {anchor = Pos {nChars = 5020, line = 177, col = 3}, position = Pos {nChars = 5047, line = 177, col = 30}}),(Fwd (Range {anchor = Pos {nChars = 5020, line = 177, col = 3}, position = Pos {nChars = 5031, line = 177, col = 14}}),"sep.dash",["e"]),Call (Fwd (Range {anchor = Pos {nChars = 5034, line = 177, col = 17}, position = Pos {nChars = 5047, line = 177, col = 30}})) "sep.by" [Call (Fwd (Range {anchor = Pos {nChars = 5041, line = 177, col = 24}, position = Pos {nChars = 5042, line = 177, col = 25}})) "e" [],Char (Fwd (Range {anchor = Pos {nChars = 5043, line = 177, col = 26}, position = Pos {nChars = 5046, line = 177, col = 29}})) '-']),(Fwd (Range {anchor = Pos {nChars = 5319, line = 191, col = 3}, position = Pos {nChars = 5353, line = 191, col = 37}}),(Fwd (Range {anchor = Pos {nChars = 5319, line = 191, col = 3}, position = Pos {nChars = 5326, line = 191, col = 10}}),"num.nat",[]),Flat (Fwd (Range {anchor = Pos {nChars = 5329, line = 191, col = 13}, position = Pos {nChars = 5353, line = 191, col = 37}})) (Seq (Fwd (Range {anchor = Pos {nChars = 5331, line = 191, col = 15}, position = Pos {nChars = 5351, line = 191, col = 35}})) [Sat (Fwd (Range {anchor = Pos {nChars = 5331, line = 191, col = 15}, position = Pos {nChars = 5340, line = 191, col = 24}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 5332, line = 191, col = 16}, position = Pos {nChars = 5339, line = 191, col = 23}})) "digit"],Rep (Fwd (Range {anchor = Pos {nChars = 5341, line = 191, col = 25}, position = Pos {nChars = 5351, line = 191, col = 35}})) (Sat (Fwd (Range {anchor = Pos {nChars = 5341, line = 191, col = 25}, position = Pos {nChars = 5350, line = 191, col = 34}})) [SatVar (Fwd (Range {anchor = Pos {nChars = 5342, line = 191, col = 26}, position = Pos {nChars = 5349, line = 191, col = 33}})) "digit"],Nothing) (0,Nothing)]))], classes = [(Fwd (Range {anchor = Pos {nChars = 3717, line = 129, col = 3}, position = Pos {nChars = 3746, line = 129, col = 32}}),(Fwd (Range {anchor = Pos {nChars = 3718, line = 129, col = 4}, position = Pos {nChars = 3725, line = 129, col = 11}}),"char.sq"),ClassMinus (ClassRange (Fwd (Range {anchor = Pos {nChars = 3729, line = 129, col = 15}, position = Pos {nChars = 3737, line = 129, col = 23}})) ' ' '~') (ClassSet (Fwd (Range {anchor = Pos {nChars = 3740, line = 129, col = 26}, position = Pos {nChars = 3746, line = 129, col = 32}})) "'\\")),(Fwd (Range {anchor = Pos {nChars = 3801, line = 134, col = 3}, position = Pos {nChars = 3830, line = 134, col = 32}}),(Fwd (Range {anchor = Pos {nChars = 3802, line = 134, col = 4}, position = Pos {nChars = 3809, line = 134, col = 11}}),"char.dq"),ClassMinus (ClassRange (Fwd (Range {anchor = Pos {nChars = 3813, line = 134, col = 15}, position = Pos {nChars = 3821, line = 134, col = 23}})) ' ' '~') (ClassSet (Fwd (Range {anchor = Pos {nChars = 3824, line = 134, col = 26}, position = Pos {nChars = 3830, line = 134, col = 32}})) "\"\\")),(Fwd (Range {anchor = Pos {nChars = 3835, line = 136, col = 3}, position = Pos {nChars = 3879, line = 136, col = 47}}),(Fwd (Range {anchor = Pos {nChars = 3836, line = 136, col = 4}, position = Pos {nChars = 3846, line = 136, col = 14}}),"char.brack"),ClassMinus (ClassVar (Fwd (Range {anchor = Pos {nChars = 3850, line = 136, col = 18}, position = Pos {nChars = 3863, line = 136, col = 31}})) "ascii.print") (ClassSet (Fwd (Range {anchor = Pos {nChars = 3866, line = 136, col = 34}, position = Pos {nChars = 3879, line = 136, col = 47}})) " []'\"-:\\")),(Fwd (Range {anchor = Pos {nChars = 4220, line = 147, col = 3}, position = Pos {nChars = 4249, line = 147, col = 32}}),(Fwd (Range {anchor = Pos {nChars = 4221, line = 147, col = 4}, position = Pos {nChars = 4234, line = 147, col = 17}}),"char.escape.c"),ClassSet (Fwd (Range {anchor = Pos {nChars = 4238, line = 147, col = 21}, position = Pos {nChars = 4249, line = 147, col = 32}})) "0abefnrtv"),(Fwd (Range {anchor = Pos {nChars = 4252, line = 148, col = 3}, position = Pos {nChars = 4316, line = 148, col = 67}}),(Fwd (Range {anchor = Pos {nChars = 4253, line = 148, col = 4}, position = Pos {nChars = 4273, line = 148, col = 24}}),"char.escape.passthru"),ClassMinus (ClassMinus (ClassVar (Fwd (Range {anchor = Pos {nChars = 4277, line = 148, col = 28}, position = Pos {nChars = 4290, line = 148, col = 41}})) "ascii.print") (ClassVar (Fwd (Range {anchor = Pos {nChars = 4293, line = 148, col = 44}, position = Pos {nChars = 4308, line = 148, col = 59}})) "char.escape.c")) (ClassSet (Fwd (Range {anchor = Pos {nChars = 4311, line = 148, col = 62}, position = Pos {nChars = 4316, line = 148, col = 67}})) "xuU")),(Fwd (Range {anchor = Pos {nChars = 5062, line = 181, col = 3}, position = Pos {nChars = 5086, line = 181, col = 27}}),(Fwd (Range {anchor = Pos {nChars = 5063, line = 181, col = 4}, position = Pos {nChars = 5074, line = 181, col = 15}}),"ascii.print"),ClassRange (Fwd (Range {anchor = Pos {nChars = 5078, line = 181, col = 19}, position = Pos {nChars = 5086, line = 181, col = 27}})) ' ' '~'),(Fwd (Range {anchor = Pos {nChars = 5090, line = 183, col = 3}, position = Pos {nChars = 5108, line = 183, col = 21}}),(Fwd (Range {anchor = Pos {nChars = 5091, line = 183, col = 4}, position = Pos {nChars = 5096, line = 183, col = 9}}),"digit"),ClassRange (Fwd (Range {anchor = Pos {nChars = 5100, line = 183, col = 13}, position = Pos {nChars = 5108, line = 183, col = 21}})) '0' '9'),(Fwd (Range {anchor = Pos {nChars = 5111, line = 184, col = 3}, position = Pos {nChars = 5154, line = 184, col = 46}}),(Fwd (Range {anchor = Pos {nChars = 5112, line = 184, col = 4}, position = Pos {nChars = 5121, line = 184, col = 13}}),"digit.hex"),ClassUnion (ClassUnion (ClassVar (Fwd (Range {anchor = Pos {nChars = 5125, line = 184, col = 17}, position = Pos {nChars = 5132, line = 184, col = 24}})) "digit") (ClassRange (Fwd (Range {anchor = Pos {nChars = 5135, line = 184, col = 27}, position = Pos {nChars = 5143, line = 184, col = 35}})) 'a' 'f')) (ClassRange (Fwd (Range {anchor = Pos {nChars = 5146, line = 184, col = 38}, position = Pos {nChars = 5154, line = 184, col = 46}})) 'A' 'F')),(Fwd (Range {anchor = Pos {nChars = 5158, line = 186, col = 3}, position = Pos {nChars = 5209, line = 186, col = 54}}),(Fwd (Range {anchor = Pos {nChars = 5159, line = 186, col = 4}, position = Pos {nChars = 5170, line = 186, col = 15}}),"ascii.alpha"),ClassUnion (ClassVar (Fwd (Range {anchor = Pos {nChars = 5174, line = 186, col = 19}, position = Pos {nChars = 5190, line = 186, col = 35}})) "ascii.alpha.lo") (ClassVar (Fwd (Range {anchor = Pos {nChars = 5193, line = 186, col = 38}, position = Pos {nChars = 5209, line = 186, col = 54}})) "ascii.alpha.hi")),(Fwd (Range {anchor = Pos {nChars = 5212, line = 187, col = 3}, position = Pos {nChars = 5239, line = 187, col = 30}}),(Fwd (Range {anchor = Pos {nChars = 5213, line = 187, col = 4}, position = Pos {nChars = 5227, line = 187, col = 18}}),"ascii.alpha.lo"),ClassRange (Fwd (Range {anchor = Pos {nChars = 5231, line = 187, col = 22}, position = Pos {nChars = 5239, line = 187, col = 30}})) 'a' 'z'),(Fwd (Range {anchor = Pos {nChars = 5242, line = 188, col = 3}, position = Pos {nChars = 5269, line = 188, col = 30}}),(Fwd (Range {anchor = Pos {nChars = 5243, line = 188, col = 4}, position = Pos {nChars = 5257, line = 188, col = 18}}),"ascii.alpha.hi"),ClassRange (Fwd (Range {anchor = Pos {nChars = 5261, line = 188, col = 22}, position = Pos {nChars = 5269, line = 188, col = 30}})) 'A' 'Z'),(Fwd (Range {anchor = Pos {nChars = 5272, line = 189, col = 3}, position = Pos {nChars = 5315, line = 189, col = 46}}),(Fwd (Range {anchor = Pos {nChars = 5273, line = 189, col = 4}, position = Pos {nChars = 5288, line = 189, col = 19}}),"ascii.alpha-num"),ClassUnion (ClassVar (Fwd (Range {anchor = Pos {nChars = 5292, line = 189, col = 23}, position = Pos {nChars = 5305, line = 189, col = 36}})) "ascii.alpha") (ClassVar (Fwd (Range {anchor = Pos {nChars = 5308, line = 189, col = 39}, position = Pos {nChars = 5315, line = 189, col = 46}})) "digit"))]}
 
-rule_string :: Rule
-rule_string = Ctor "Rule.String" $ Seq
-  [ Str "\""
-  , Star $ Call "chars.dq" []
-  , Str "\""
-  ]
+------ Cleanup ------
 
-rule_call :: Rule
-rule_call = Ctor "Rule.Call" $ Seq
-  [ Call "Rule.name" []
-  , opt $ Seq
-    [ Str "<"
-    , Call "sep.by"
-      [ Seq [ Str ",", opt $ Call "ws" [] ] -- TODO take this (and similar lines) and factor them into their own rule
-      , Call "Rule" [Call "Rule.Flat" []]
-      ]
-    , Str ">"
-    ]
-  ]
+pattern Kw :: String -> Texpr
+pattern Kw str <- Atom _ str
 
-rule_name_ :: Rule
-rule_name_ = Flat $
-  Call "sep.dot"
-    [ Seq
-      [ Sat alpha
-      , Many alphaNum
-      ]
-    ]
+clean :: Texprs -> Texprs
+clean ts = cleanKeywords <$> concatMap cleanSpace ts
 
-rule_name_lower_ :: Rule
-rule_name_lower_ = Flat $
-  Call "sep.dot"
-    [ Seq
-      [ Sat loAlpha
-      , Many loAlphaNum
-      ]
-    ]
+cleanSpace :: Texpr -> Texprs
+cleanSpace t@(Atom _ _) = [t]
+cleanSpace (Combo l name ts)
+  | name `elem` ["space", "nl", "comment", "doc", "bird-foot"] = []
+  --- | "BirdFoot" `isPrefixOf` name = []
+  | otherwise = [Combo l name (concatMap cleanSpace ts)]
+cleanSpace (Error _ _ _) = error "internal Peg error"
 
------- Defining Classes ------
-
-classDef :: Rule
-classDef = Ctor "Class.Def" $ Seq
-  [ Call "Class.Var" []
-  , Call "ws" []
-  , Str "="
-  , Call "ws" []
-  , Call "Class.body" []
-  ]
-
-class_body_ :: Rule
-class_body_ = Seq
-  [ Call "Class.term" []
-  , Star2 (Call "ws" [])
-    $ Seq
-      [ Call "Class.operator" []
-      , Call "ws" []
-      , Call "Class.term" []
-      ]
-  ]
-
-class_term_ :: Rule
-class_term_ = Alt
-  [ Expect "class name"        $ Call "Class.Var" []
-  , Expect "set"               $ Call "Char.Set" []
-  , Expect "range"             $ Call "Char.Range" []
-  , Expect "character literal" $ Call "Char" []
-  ]
-
-class_operator_ :: Rule
-class_operator_ = Alt
-  [ Str "|"
-  , Str "-"
-  ]
-
-class_var :: Rule
-class_var = Ctor "Class.Var" $ Seq
-  [ Str ":"
-  , Call "Class.name" []
-  , Str ":"
-  ]
-
-class_name_ :: Rule
-class_name_ = Flat $
-  Call "sep.dot"
-    [ Seq
-      [ plus (Sat loAlpha)
-      , Star $ Seq
-        [ Str "-"
-        , plus (Sat loAlpha)
-        ]
-      ]
-    ]
-
------- Literals ------
-
-char :: Rule
-char = Ctor "Char" $ Seq
-  [ Str "\'"
-  , Call "char.sq" []
-  , Str "\'"
-  ]
-
-char_range :: Rule
-char_range = Ctor "Char.Range" $ Seq
-  [ Str "\'", Call "char.sq" [], Str "\'"
-  , Str ".."
-  , Str "\'", Call "char.sq" [], Str "\'"
-  ]
-
-char_set :: Rule
-char_set = Ctor "Char.Set" $ Seq
-  [ Str "\""
-  , Star $ Call "chars.dq" []
-  , Str "\""
-  ]
-
-char_sq_ :: Rule
-char_sq_ = Alt
-  [ Sat sqCharSet
-  , Call "char.Escape" []
-  ]
-sqCharSet :: CharSet
-sqCharSet = CS.contiguous ' ' '~' `CS.minus` CS.oneOf "\'\\"
-
-chars_dq_ :: Rule
-chars_dq_ = Alt
-  [ Flat $ Sat dqCharSet `Seq2` Many dqCharSet
-  , Call "char.Escape" []
-  ]
-dqCharSet :: CharSet
-dqCharSet = CS.contiguous ' ' '~' `CS.minus` CS.oneOf "\"\\"
-
-char_escape :: Rule
-char_escape = Ctor "char.Escape" $ Alt
-  [ Seq [ Str "\\x", Flat . Seq $ replicate 2 (Sat hexDigit) ]
-  , Seq [ Str "\\u", Flat . Seq $ replicate 4 (Sat hexDigit) ]
-  , Seq
-    [ Str "\\U"
-    , Flat $ Alt
-      [ Seq $ Str "0"  : replicate 5 (Sat hexDigit)
-      , Seq $ Str "10" : replicate 4 (Sat hexDigit)
-      ]
-    ]
-  , Flat $ Seq [ Str "\\", Sat cEscapeChar ]
-  , Seq [ Str "\\", Sat asciiPrint ]
-  ]
-
------- Utilities ------
-
-ws_ :: Rule
-ws_ = plus1 $ Alt
-  [ Call "Space" []
-  , Call "Comment" []
-  , AsUnit $ Seq
-     [ Call "Nl" []
-     , Star $ Call "BirdFoot.Improper" []
-     , Call "BirdFoot" []
-     , Call "ws" []
-     ]
-  ]
-
-blank_ :: Rule
-blank_ = plus1 $ Alt
-  [ Seq
-    [ Call "BirdFoot" []
-    , Star1 $ Call "Space" [] `Alt2` Call "Comment" []
-    , Call "Nl" []
-    ]
-  , Call "BirdFoot.Improper" []
-  ]
-
-birdFoot :: Rule
-birdFoot = Ctor "BirdFoot" $ Str "> "
-
-birdFoot_improper :: Rule
-birdFoot_improper = Ctor "BirdFoot.Improper" $ Str ">\n"
-
-space :: Rule
-space = Ctor "Space" $ Flat $ Sat wsChar `Seq2` Many wsChar
-
-nl :: Rule
-nl = Ctor "Nl" $ Str "\n"
-
-comment :: Rule
-comment = Ctor "Comment" $ Seq
-  [ Str "#"
-  , Many $ CS.complement (CS.singleton '\n')
-  ]
-
------- General Combinators ------
-
-sep_by_ :: ([String], Rule)
-sep_by_ = (["sep", "g"], it)
+cleanKeywords :: Texpr -> Texpr
+cleanKeywords t@(Atom _ _) = t
+cleanKeywords (Combo l "rule-sat" ((cleanKeywords <$>) -> ts))
+  | (Kw "[^" : (unsnoc -> Just (ts', Kw "]"))) <- ts
+  = Combo l "rule-sat.neg" ts'
+cleanKeywords (Combo l ctor ((cleanKeywords <$>) -> ts0)) = Combo l ctor (go ctor ts0)
   where
-  it = Seq
-    [ Call "g" []
-    , Star $ Seq
-      [ Call "sep" []
-      , Call "g" []
-      ]
-    ]
+  go "def-rule" (name : Kw "=" : rest) = name : rest
+  go "rule-parametric" (f : Kw "<" : (unsnoc -> Just (ts, Kw ">"))) = f : concatMap cleanComma ts
+  go "rule-ctor" (name : Kw ":" : rest) = name:rest
+  go "rep-custom" (Kw "{" : (unsnoc -> Just (ts, Kw "}"))) = ts
+  go "rep-custom" [Kw "{", lo, comma@(Kw ","), hi, Kw "}"] = [lo, comma, hi]
+  go "rep-custom" [Kw "{", comma@(Kw ","), hi, Kw "}"] = [comma, hi]
+  go "rep-custom" [Kw "{", lo, comma@(Kw ","), Kw "}"] = [lo, comma]
+  go "rule-commit" [Kw "(", t1, Kw "->", t2, Kw ")"] = [t1, t2]
+  go "rule-group" (Kw "(" : (unsnoc -> Just (ts, Kw ")"))) = ts
+  go "rule-flat" (Kw "/" : (unsnoc -> Just (ts, Kw "/"))) = ts
+  go "rule-call" (f : Kw "<" : (unsnoc -> Just (ts, Kw ">"))) = f : concatMap cleanComma ts
+  go "rule-char" [Kw "\'", c, Kw "\'"] = [c]
+  go "rule-string" (Kw "\"" : (unsnoc -> Just (ts, Kw "\""))) = ts
+  go "rule-sat" (Kw "[" : (unsnoc -> Just (ts, Kw "]"))) = ts
+  go "rule-end" [Kw "$"] = []
+  go "rule-void" (Kw "0" : Kw ":" : Kw "\"" : (unsnoc -> Just (ts, Kw "\""))) = ts
+  go "sat-range" [Kw "\'", lo, Kw "\'", Kw "..", Kw "\'", hi, Kw "\'"] = [lo, hi]
+  go "sat-char" [Kw "\'", c, Kw "\'"] = [c]
+  go "sat-var" [Kw ":", name, Kw ":"] = [name]
+  go "def-class" (Kw ":":name:Kw ":":Kw "=":body) = (name : body)
+  go "class-var" [Kw ":", name, Kw ":"] = [name]
+  go "class-set" (Kw "\"" : (unsnoc -> Just (ts, Kw "\""))) = ts
+  go "class-range" [Kw "\'", lo, Kw "\'", Kw "..", Kw "\'", hi, Kw "\'"] = [lo, hi]
+  go "class-char" [Kw "\'", c, Kw "\'"] = [c]
+  go _ other = other
+cleanKeywords (Error _ _ _) = error "internal Peg error"
 
-sep_dot_ :: ([String], Rule)
-sep_dot_ = (["g"], it)
-  where it = Call "sep.by" [Str ".", Call "g" []]
+cleanComma :: Texpr -> Texprs
+cleanComma (Kw ",") = []
+cleanComma t = [t]
 
-num_nat_ :: Rule
-num_nat_ = Flat $ Sat digit `Seq2` Many digit
+unsnoc :: [a] -> Maybe ([a], a)
+unsnoc xs = do
+  (x,xs') <- uncons (reverse xs)
+  pure (reverse xs', x)
 
------- Character Sets ------
+parsePeg :: Texprs -> Peg
+parsePeg ts0 =
+  let (classes, ts1) = parseClasses ts0
+      (rules, ts2) = parseRules ts1
+      start = parseStartDef ts2
+   in Peg {start, rules, classes}
 
-wsChar :: CharSet
-wsChar = CS.oneOf " "
+------ Start ------
 
-loAlpha :: CharSet
-loAlpha = CS.contiguous 'a' 'z'
+type StartDef = Maybe (FwdRange, String)
 
-hiAlpha :: CharSet
-hiAlpha = CS.contiguous 'A' 'Z'
+parseStartDef :: Texprs -> StartDef
+parseStartDef [] = Nothing
+parseStartDef [t] = Just $ go t
+  where
+  go (Combo l "def-start" [Atom _ name]) = (l, name)
+  go _ = error "internal Peg grammar error"
+parseStartDef _ = error "internal Peg grammar error"
 
-alpha :: CharSet
-alpha = loAlpha `CS.union` hiAlpha
+------ Rules ------
 
-digit :: CharSet
-digit = CS.contiguous '0' '9'
+type RuleDef = (FwdRange, (FwdRange, String, [String]), Rule)
 
-hexDigit :: CharSet
-hexDigit =   digit
-  `CS.union` CS.contiguous 'a' 'f'
-  `CS.union` CS.contiguous 'A' 'F'
+parseRules :: Texprs -> ([RuleDef], Texprs)
+parseRules defs =
+  let (rs, defs') = partition isRuleDef defs
+      rs' = parseRuleDef <$> rs
+   in (rs', defs')
+  where
+  isRuleDef (Combo _ "def-rule" _) = True
+  isRuleDef _ = False
 
-alphaNum :: CharSet
-alphaNum = alpha `CS.union` digit
+parseRuleDef :: Texpr -> RuleDef
+parseRuleDef (Combo l "def-rule" [binder,body]) = (l, parseRuleBinder binder, parseRule body)
+parseRuleDef _ = error "internal Peg grammar error"
 
-loAlphaNum :: CharSet
-loAlphaNum = alphaNum `CS.minus` hiAlpha
+parseRuleBinder :: Texpr -> (FwdRange, String, [String])
+parseRuleBinder (Atom l str) = (l, str, [])
+parseRuleBinder (Combo l "rule-parametric" (f:params)) =
+  (l, fromName f, fromName <$> params)
+  where
+  fromName (Atom _ str) = str
+  fromName _  = error "internal Peg grammar error"
+parseRuleBinder _ = error "internal Peg grammar error"
 
-cEscapeChar :: CharSet
-cEscapeChar = CS.oneOf "0abefnrtv"
+parseRule :: Texpr -> Rule
+parseRule (Combo l "rule-alt" ts) = Alt l $ loop ts
+  where
+  loop [t] = [parseRule t]
+  loop (a:Kw "|":rest) = parseRule a : loop rest
+  loop _ = error "internal Peg grammar error"
+parseRule (Combo _ "rule-ctor" [Atom l ctor, g]) = Ctor l ctor $ parseRule g
+parseRule (Combo l "rule-seq" ts) = Seq l $ parseRule <$> ts
+parseRule (Combo l "rule-rep" [g, amt]) = Rep l (parseCommit g) (parseAmount amt)
+  where
+  parseCommit :: Texpr -> (Rule, Maybe Rule)
+  parseCommit (Combo _ "rule-commit" [g1, g2]) = (parseRule g1, Just $ parseRule g2)
+  parseCommit g1 = (parseRule g1, Nothing)
+  parseAmount :: Texpr -> (Int, Maybe Int)
+  parseAmount (Kw "*") = (0, Nothing)
+  parseAmount (Kw "+") = (1, Nothing)
+  parseAmount (Kw "?") = (0, Just 1)
+  parseAmount (Combo _ "rep-custom" [Kw ","]) = (0, Nothing)
+  parseAmount (Combo _ "rep-custom" [t]) = (parseInt t, Just $ parseInt t)
+  parseAmount (Combo _ "rep-custom" [t,Kw ","]) = (parseInt t, Nothing)
+  parseAmount (Combo _ "rep-custom" [Kw ",", t]) = (0, Just $ parseInt t)
+  parseAmount (Combo _ "rep-custom" [t1, Kw ",", t2]) = (parseInt t1, Just $ parseInt t2)
+  parseAmount _ = error "internal Peg grammar error"
+  parseInt :: Texpr -> Int
+  parseInt (Atom _ n) = read n
+  parseInt _ = error "internal Peg grammar error"
+parseRule (Combo _ "rule-group" [g]) = parseRule g
+parseRule (Combo l "rule-flat" [g]) = Flat l $ parseRule g
+parseRule (Combo l "rule-call" (Atom _ f : args)) = Call l f (parseRule <$> args)
+parseRule (Combo l "rule-char" [c]) = Char l $ parseChar c
+parseRule (Combo l "rule-string" ts) = Str l $ concatMap parseStr ts
+parseRule (Combo l "rule-sat" ts) = Sat l $ parseSatClass <$> ts
+parseRule (Combo l "rule-sat.neg" ts) = SatNeg l $ parseSatClass <$> ts
+parseRule (Combo l "rule-end" []) = End l
+-- parseRule (Combo l "rule-void" [Atom _ msg]) = Void l msg -- TODO
+parseRule _ = error "internal Peg grammar error"
 
-asciiPrint :: CharSet
-asciiPrint = CS.contiguous ' ' '~'
+parseSatClass :: Texpr -> SatClass
+parseSatClass = \case
+  Combo l "sat-char" [c] -> SatChar l (parseChar c)
+  Combo l "sat-range" [lo, hi] -> SatRange l (parseChar lo) (parseChar hi)
+  Combo l "sat-var" [Atom _ name] -> SatVar l name
+  Atom l cs -> SatSet l cs
+  _ -> error "internal Peg grammar error"
 
------- Helpers ------
+------ Character Classes ------
 
-opt :: Rule -> Rule
-opt g = g `Alt2` Empty
+type ClassDef = (FwdRange, (FwdRange, String), CharClass)
 
-plus :: Rule -> Rule
-plus g = g `Seq2` Star g
+parseClasses :: Texprs -> ([ClassDef], Texprs)
+parseClasses defs =
+  let (clss, defs') = partition isClassDef defs
+      clss' = parseClass <$> clss
+   in (clss', defs')
+  where
+  isClassDef (Combo _ "def-class" _) = True
+  isClassDef _ = False
 
-plus1 :: Rule -> Rule
-plus1 g = g `Seq2` Star1 g
+parseClass :: Texpr -> (FwdRange, (FwdRange, String), CharClass)
+parseClass (Combo l "def-class" (Atom xLoc x:body)) =
+  (l, (xLoc, x), parseClassBody body)
+parseClass _ = error "internal Peg grammar error"
+
+parseClassBody :: Texprs -> CharClass
+parseClassBody = loop . reverse
+  where
+  loop = \case
+    [t] -> parseClassTerm t
+    (b:o:prior) -> (parseOper o) (loop prior) (parseClassTerm b)
+    _ -> error "internal Peg grammar error"
+  parseOper (Kw "|") = ClassUnion
+  parseOper (Kw "-") = ClassMinus
+  parseOper _ = error "internal Peg grammar error"
+
+parseClassTerm :: Texpr -> CharClass
+parseClassTerm t = case t of
+  Combo l "class-var" [Atom _ name] -> ClassVar l name
+  Combo l "class-char" [c] -> ClassChar l (parseChar c)
+  Combo l "class-range" [lo, hi] -> ClassRange l (parseChar lo) (parseChar hi)
+  Combo l "class-set" elems -> ClassSet l (concatMap parseStr elems)
+  _ -> error "internal Peg grammar error"
+
+------ Utility Parsers ------
+
+parseChar :: Texpr -> Char
+parseChar (Atom _ [c]) = c
+parseChar (Combo _ "char-escape" [Atom _ ['\\',c]]) = case c of
+  '0' -> '\NUL'
+  'a' -> '\a'
+  'b' -> '\b'
+  'e' -> '\ESC'
+  'f' -> '\f'
+  'n' -> '\n'
+  'r' -> '\r'
+  't' -> '\t'
+  'v' -> '\v'
+  _ -> error "internal Peg grammar error"
+parseChar (Combo _ "char-escape" [Atom _ kw, Atom _ str]) = case kw of
+  "\\x" -> chr $ read ("0x" ++ str)
+  "\\u" -> chr $ read ("0x" ++ str)
+  "\\U" -> chr $ read ("0x" ++ str)
+  "\\" -> head str
+  _ -> error "internal Peg grammar error"
+parseChar t = error $ "internal Peg grammar error: parseChar " ++ show t
+
+parseStr :: Texpr -> String
+parseStr (Atom _ str) = str
+parseStr t@(Combo _ "char-escape" _) = [parseChar t]
+parseStr _ = error "internal Peg grammar error"

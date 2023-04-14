@@ -1,23 +1,21 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Main (main,main1,main2) where
 
 import Text.Pretty.Simple
 
-import Control.Monad (forM_)
 import Data.Map (Map)
-import Data.Texpr (unparse)
+import System.Exit (exitFailure)
 import Text.Location (startInput)
-import Text.Texpr.Define (Peg(..),cleanSpace,cleanKeywords,cleanGrouping)
-import Text.Texpr.Monad (runPeg)
+import Text.Texpr.Monad (runPeg,ErrorReport(..))
 import Text.Texpr.Tree (Rule(..),pattern Alt,pattern Seq,pattern Star)
 
 import qualified Data.CharSet as CS
 import qualified Data.Map as Map
-import qualified Text.Texpr.Bootstrap as Bs
+import qualified Text.Texpr.Bootstrap as Tbnf
 import qualified Text.Texpr.Compile as C
-import qualified Text.Texpr.Define as Def
 
 main :: IO ()
 main = main2
@@ -27,27 +25,31 @@ main = main2
 main2 :: IO ()
 main2 = do
   selfGrammar <- readFile "docs/tbnf.tbnf"
-  let r = runPeg Bs.rules Bs.startRule (startInput selfGrammar)
-  case r of
-    Right (ts, p) -> do
-      putStrLn $ concatMap unparse ts
-      -- putStrLn "======"
-      -- print `mapM_` ts
-      putStrLn "======"
-      let cleanTs = fmap cleanKeywords $ concatMap cleanSpace ts
-      print `mapM_` fmap cleanGrouping cleanTs
-      print p
-      putStrLn "======"
-      let peg = Def.parsePeg ts
-      forM_ peg.classes $ \(_, (_, name), cls) -> pPrint (name, cls)
-      putStrLn "------"
-      forM_ peg.rules $ \(_, (_, name, args), body) -> pPrint (name, args, body)
-      putStrLn "------"
-      print peg.start
-      putStrLn "======"
-      let tree = C.compile peg
-      pPrint tree
-    Left e -> print e
+  peg1 <- case uncurry runPeg Tbnf.grammar (startInput selfGrammar) of
+    Right (ts0, _) -> do
+      let ts1 = Tbnf.clean ts0
+      let peg = Tbnf.parsePeg ts1
+      case C.compile peg of
+        Right g -> pure g
+        Left e -> print e >> exitFailure
+    Left e -> do
+      print e.prior
+      pPrint e.reason
+      exitFailure
+  peg2 <- case uncurry runPeg peg1 (startInput selfGrammar) of
+    Right (ts0, _) -> do
+      let ts1 = Tbnf.clean ts0
+      let peg = Tbnf.parsePeg ts1
+      case C.compile peg of
+        Right g -> pure g
+        Left e -> print e >> exitFailure
+    Left e -> do
+      print e.prior
+      pPrint e.reason
+      exitFailure
+  if peg1 == peg2
+    then print "^.^"
+    else exitFailure
 
 ------------------------------------
 

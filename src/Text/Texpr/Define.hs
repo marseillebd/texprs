@@ -37,30 +37,34 @@ data Rule
   | End FwdRange
   | Flat FwdRange Rule
   | Call FwdRange String [Rule]
+  | Ctor FwdRange String Rule
+  deriving (Show)
 
-instance Show Rule where
-  show (Alt _ ts) = concat [ "(Alt " , show ts, ")" ]
-  show (Call _ f args) = concat [ "(Call ", show f, " ", show args, ")" ]
-  show (Rep _ body amt) = concat [ "(Rep ", show body, " ", show amt, ")" ]
-  show (Sat _ clss) = concat [ "(Sat ", show clss, ")" ]
-  show (SatNeg _ clss) = concat [ "(SatNeg ", show clss, ")" ]
-  show (Char _ c) = concat [ "(Char ", show c, ")" ]
-  show (Str _ str) = concat [ "(Str ", show str, ")" ]
-  show (End _) = "End"
-  show (Seq _ ts) = concat [ "(Seq " , show ts, ")" ]
-  show (Flat _ t) = concat [ "(Flat ", show t, ")" ]
+-- instance Show Rule where
+--   show (Alt _ ts) = concat [ "(Alt " , show ts, ")" ]
+--   show (Call _ f args) = concat [ "(Call ", show f, " ", show args, ")" ]
+--   show (Rep _ body amt) = concat [ "(Rep ", show body, " ", show amt, ")" ]
+--   show (Sat _ clss) = concat [ "(Sat ", show clss, ")" ]
+--   show (SatNeg _ clss) = concat [ "(SatNeg ", show clss, ")" ]
+--   show (Char _ c) = concat [ "(Char ", show c, ")" ]
+--   show (Str _ str) = concat [ "(Str ", show str, ")" ]
+--   show (End _) = "End"
+--   show (Seq _ ts) = concat [ "(Seq " , show ts, ")" ]
+--   show (Flat _ t) = concat [ "(Flat ", show t, ")" ]
+--   show (Ctor _ name t) = concat [ "(Ctor ", show name, " ", show t, ")" ]
 
 data SatClass
   = SatVar FwdRange String
   | SatRange FwdRange Char Char
   | SatChar FwdRange Char
   | SatSet FwdRange [Char]
+  deriving (Show)
 
-instance Show SatClass where
-  show (SatVar _ x) = concat [ "(SatVar ", show x , ")" ]
-  show (SatRange _ lo hi) = concat [ "(SatRange ", show lo, " ", show hi , ")" ]
-  show (SatChar _ c) = concat [ "(SatChar ", show c , ")" ]
-  show (SatSet _ cs) = concat [ "(SatSet ", show cs , ")" ]
+-- instance Show SatClass where
+--   show (SatVar _ x) = concat [ "(SatVar ", show x , ")" ]
+--   show (SatRange _ lo hi) = concat [ "(SatRange ", show lo, " ", show hi , ")" ]
+--   show (SatChar _ c) = concat [ "(SatChar ", show c , ")" ]
+--   show (SatSet _ cs) = concat [ "(SatSet ", show cs , ")" ]
 
 data CharClass
   = ClassVar FwdRange String
@@ -69,14 +73,15 @@ data CharClass
   | ClassSet FwdRange [Char]
   | ClassUnion CharClass CharClass
   | ClassMinus CharClass CharClass
+  deriving (Show)
 
-instance Show CharClass where
-  show (ClassVar _ str) = concat [ "ClassVar ", show str ]
-  show (ClassRange _ lo hi) = concat ["ClassRange ", show lo, " ", show hi]
-  show (ClassChar _ c) = concat [ "ClassChar ", show c ]
-  show (ClassSet _ cs) = concat [ "ClassSet ", show cs ]
-  show (ClassUnion a b) = concat [ "ClassUnion (", show a, ") (", show b, ")" ]
-  show (ClassMinus a b) = concat [ "ClassMinus (", show a, ") (", show b, ")" ]
+-- instance Show CharClass where
+--   show (ClassVar _ str) = concat [ "ClassVar ", show str ]
+--   show (ClassRange _ lo hi) = concat ["ClassRange ", show lo, " ", show hi]
+--   show (ClassChar _ c) = concat [ "ClassChar ", show c ]
+--   show (ClassSet _ cs) = concat [ "ClassSet ", show cs ]
+--   show (ClassUnion a b) = concat [ "ClassUnion (", show a, ") (", show b, ")" ]
+--   show (ClassMinus a b) = concat [ "ClassMinus (", show a, ") (", show b, ")" ]
 
 -- TODO honestly, all this parsing stuff under here is garbage, I can't wait to replace it using the langs I'm defining
 
@@ -129,6 +134,8 @@ parseRule _ = error "internal Peg grammar error"
 
 parseTerm :: Texpr -> Rule
 parseTerm (Combo _ "Rule.Term" [t]) = parseFactor t
+parseTerm (Combo l "Rule.Term" (Combo _ "Rule.Ctor" [Atom ctorL ctor]:ts))
+  = Ctor ctorL ctor $ Seq l $ parseFactor <$> ts
 parseTerm (Combo l "Rule.Term" ts) = Seq l $ parseFactor <$> ts
 parseTerm _ = error "internal Peg grammar error"
 
@@ -279,6 +286,7 @@ cleanKeywords (Combo l ctor ((cleanKeywords <$>) -> ts0)) = Combo l ctor (go cto
   go "Rule.String" (Kw "\"" : (unsnoc -> Just (ts, Kw "\""))) = ts
   go "Rule.Call" (f : Kw "<" : (unsnoc -> Just (ts, Kw ">"))) = f : concatMap cleanComma ts
   go "Rule.Flat" (Kw "/" : (unsnoc -> Just (ts, Kw "/"))) = ts
+  go "Rule.Ctor" [name, Kw ":"] = [name]
   go _ other = other
 cleanKeywords (Error _ _ _) = error "internal Peg error"
 

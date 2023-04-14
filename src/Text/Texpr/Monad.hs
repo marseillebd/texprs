@@ -70,6 +70,7 @@ many cs = Parse $ \_ inp -> case span (`CS.elem` cs) inp.txt of
     loc' = Loc.advance inp.loc ok
 
 string :: String -> Parse Texprs
+string "" = Parse $ \_ inp -> Right ([], inp)
 string str = Parse $ \env inp -> case stripPrefix str inp.txt of
   Just txt' -> Right ([t], Input loc' txt')
     where
