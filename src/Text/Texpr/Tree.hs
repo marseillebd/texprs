@@ -56,7 +56,7 @@ data Rule
 pattern Alt :: [Rule] -> Rule
 pattern Alt ts <- (fromAlt -> ts@(_:_:_))
   where
-  Alt [] = Void
+  Alt [] = End -- TODO should be Void
   Alt (t:ts) = foldl Alt2 t ts
 fromAlt :: Rule -> [Rule]
 fromAlt (Alt2 g1 g2) = fromAlt g1 <> fromAlt g2

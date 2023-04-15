@@ -1,20 +1,95 @@
+# TBNF Grammar
 
+TODO: make it so that the rule name "start" is the default start rule, not simply whatever rule comes first.
 > start = ("" -> top)* $
+
+
+TBNF is a language for specifying a variant of parser expression grammars.
+Successful output from a TBNF grammar is a t-expression containing, in-order,
+  every character of the original input.
+TODO: describe what's different about tbnf vs peg.
+
+## Large-Scale Structure
+
+TBNF grammars are defined with a syntax similar to ABNF/ABNF.
+The first notable difference however, is that TBNF is written in a literate coding style.
+This allows for documentation of a grammar to be placed directly alongside the grammar itself.
+In fact, you are reading a TBNF grammar _right now_.
+Compare this to regular expression syntax, which focuses on the technical details, but which is notoriously write-only code.
+
+In bird-style literate programming,
+  all the lines of code are prefixed by a "bird foot",
+  and all other lines are automatically considered documentation.
+I personally recommend using Markdown syntax for documentation sections.
+The name comes from the apparent resemblance of the greater-than sign
+  to the footprint of a bird.
+
+Here is the corresponding code that implements detecting bird feet and documentation lines.
+Exactly how this syntax works will be explained later.
+For now, the syntax should resemble familiar grammar definitions enough so that
+  you won't have much issue reading it.
+Note however, that identifiers followed by a colon indicate a "constructor",
+  which will appear in the final output,
+  wrapping the match of the grammar to the right of the colon.
+
+> birdFoot = bird-foot: '>' ' '
+> doc.line = doc:
+>   / [^ >'\n' ]   # one character on the line that is not `>`
+>     [^ '\n'  ]*  # any other characters on the line
+>   /
+>
+> Doc = (doc.line nl? | nl)+
+
+Beyond documentation, TBNF grammars consist of definitions (the `Def` rule).
+These definitions are interspersed between documentation.
+We can see that definitions begin at the start of a line, and there may be linear whitespace (`lws`) trailing the line.
+Additionally, it is possible to have blank code lines, called here "vertical whitespace" `vws`.
+Before moving on to definitions, I'll describe what is allowed for both linear and vertical whitespace.
+
 > top
 >   = Doc
 >   | birdFoot Def lws* (nl | $)
 >   | vws
+>
+> nl = nl: '\n'
+
+Linear whitespace includes both space characters and inline comments.
+Comments are preceded by a hash and continue to the end of the line.
+
+> space = space: /' '+/
+> comment = comment: '#' /[^'\n']*/
+
+Additionally, if a code line is indented (in absolute terms), then it is effectively part of the previous line.
+Blank code lines also do not contribute, so we also need to account for blank lines which consist _only_ of a greater-than symbol: thus, we introduce "improper" bird feet.
+Note that these are wrapped in the same constructor as plain bird feet (including a space after the greater-than).
+The same constructor may be used as many times in as many places as one likes.
+
+> birdFoot.improper = bird-foot: '>' '\n'
+
+With those preliminaries dealt with, we can easily read the definition of linear whitespace (lws).
+Spaces, comments, and indented lines following blank code lines.
+In this grammar we will generally use `lws*` and `lws+` because whitespace is sometimes optional and sometimes required.
+TODO: Note that documentation is not allowed to come in the middle of a definition (I'm not sure that's a good thing to allow).
+
+> lws = space
+>     | comment
+>     | nl birdFoot.improper* birdFoot lws
+
+Vertical whitespace, on the other hand, consists of lines that contain at most linear whitespace.
+
+> vws = birdFoot space* comment? nl
+>     | birdFoot.improper
+
+
+# TODO Here there Be Dragons
+
+
 
 ## Whitespace, Comments, & Documentation
 
 Documentation is just any sequence of lines that do not begin with a `>`.
 This will not generate empty documentation, but it does preserve empty lines.
 
-> Doc = (doc.line nl? | nl)+
-> doc.line = doc:
->   / [^ >'\n' ]   # one character on the line that is not `>`
->     [^ '\n'  ]*  # any other characters on the line
->   /
 
 Tokens are often separated by linear whitespace.
 Do do so, we need not only skip over space characters (not tab),
@@ -22,16 +97,6 @@ Do do so, we need not only skip over space characters (not tab),
   and go into the next line as long as it is indented.
 This implements a logical notion of whitespace, not merely graphical.
 
-> space = space: /' '+/
-> nl = nl: '\n'
-> comment = comment: '#' /[^'\n']*/
->
-> birdFoot = bird-foot: '>' ' '
-> birdFoot.improper = bird-foot: '>' '\n'
->
-> lws = space
->     | comment
->     | nl birdFoot.improper* birdFoot lws
 
 Additionally, we will need to skip _vertical_ whitespace.
 This includes lines that are empty (except for a bird foot),
@@ -39,8 +104,6 @@ This includes lines that are empty (except for a bird foot),
 As with linear whitespace, this skips _logically_ blank lines
   rather than merely graphically blank lines.
 
-> vws = birdFoot space* comment? nl
->     | birdFoot.improper
 
 ## Definitions
 
@@ -91,7 +154,7 @@ TODO global rules are upcase, local rules and captures are locase
 
 > Rule.allowFlat = Rule<Rule.Flat>
 > Rule.Seq.allowFlat = Rule.Seq<Rule.Flat>
-> Rule.disallowFlat = Rule<$> # TODO use `0:"flat rule inside flat"
+> Rule.disallowFlat = Rule<$> # TODO use 0:"flat rule inside flat"
 
 ## Primitive Rules
 

@@ -29,6 +29,7 @@ main2 = do
     Right (ts0, _) -> do
       let ts1 = Tbnf.clean ts0
       let peg = Tbnf.parsePeg ts1
+      -- print peg -- NOTE for replacing the bootstrap grammar with the written grammar
       case C.compile peg of
         Right g -> pure g
         Left e -> print e >> exitFailure
