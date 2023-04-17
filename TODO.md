@@ -5,13 +5,14 @@
   - however, I'd like to allow some _subset_ of the sequence to match, and _only then_ will subsequent errors lift out of the star
 - cleanup:
   - [x] output tbnf.tbnf Define form to Haskell
+  - [ ] module Data.Range (ORDS(DisjointGT,TangentGT,OverlapGT,ContainGT,EQ,..)Ords(compares))
   - [ ] import control
   - [ ] newtypes for restricted strings
     - [ ] global rule names should begin with a capital letter
     - [ ] local rule names and captures should begin with a lowercase letter
     - [ ] instead of inserting `Capture` for rules that have some capitalization, mark it explicitly, but anywhere
           using `<ctor-name> : <grammar>` syntax that binds more loosely than alt
-  - [ ] documentation
+  - [x] documentation
   - [ ] if input has not advanced in Star or Many, then the combinator should not recurse
   - [x] better position type
   - [x] ErrorReport should be a record
@@ -32,6 +33,11 @@
 - [ ] texpr rewriter language
   - [ ] define a textual grammar for rewriters
   - [ ] the match/rewrite algorithm
+- imagine if, instead of just operating over characters, parsers could also operate over texprs
+  - then, we could do a lexing phase over characters, followed by a parsing phase over tokens
+  - I'd probly use syntax like `[Foo]` to match any texpr with a `Foo` ctor; and that'd be that
+    - because if you're using this part of the parser, you don't want to dig inside tokens
+    - well, maybe `[Foo: g1 (g2.a g2.b) g3]` to match sub-expressions or `[g1]` to match atoms
 - [ ] parser for a language defining PEGs
   - [x] should be literate by default
   - [x] define character sets

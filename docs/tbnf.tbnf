@@ -80,91 +80,70 @@ Vertical whitespace, on the other hand, consists of lines that contain at most l
 > vws = birdFoot space* comment? nl
 >     | birdFoot.improper
 
-
-# TODO Here there Be Dragons
-
-
-
-## Whitespace, Comments, & Documentation
-
-Documentation is just any sequence of lines that do not begin with a `>`.
-This will not generate empty documentation, but it does preserve empty lines.
-
-
-Tokens are often separated by linear whitespace.
-Do do so, we need not only skip over space characters (not tab),
-  but also skip comments,
-  and go into the next line as long as it is indented.
-This implements a logical notion of whitespace, not merely graphical.
-
-
-Additionally, we will need to skip _vertical_ whitespace.
-This includes lines that are empty (except for a bird foot),
-  and may include space characters and/or a comment.
-As with linear whitespace, this skips _logically_ blank lines
-  rather than merely graphically blank lines.
-
-
 ## Definitions
 
-There are three sorts of definitions in a grammar.
-One is a definition of the start rule,
-  another to define the grammatical rules,
-  and finally one to define character classes.
-
-> Def = Def.Start | Def.Class | Def.Rule
+A TBNF grammar consists of two parts: a set of rules/productions/non-terminals, and a start rule.
+If no start rule is specified, then it is by default whatever rule is named `start`.
+Otherwise, one may define a start rule with the following syntax:
 
 > Def.Start = def-start: "@start" lws+ '=' lws+ Name.rule
 
-TODO global rules are upcase, local rules and captures are locase
+While rules in context-free grammars or parser expression grammars are simply given a name,
+  rules in TBNF may be parameterized.
+This allows for code re-use across (potentially infinite) families of related grammars.
 
-> Def.Rule = def-rule: Def.Rule.lhs lws+ '=' lws+ Rule<Rule.Flat>
+> Def.Rule = def-rule: Def.Rule.lhs lws+ '=' lws+ Rule.allowFlat
+>
 > Def.Rule.lhs = rule-parametric:
 >                 Name.rule enclose.angles<sep.comma<Name.param>>
 >              | Name.rule
 
+There is one other sort of definition, which aids in defining rules: the character class definition.
+These are effectively shortcuts used to specify which individual characters are permitted during parsing.
+
 > Def.Class = def-class: enclose.colon<Name.class> lws+ '=' lws+ Class
 
-## Rule Operators
+Together, these are the three sorts of definition possible in TBNF.
 
-> Rule<f>
->   = rule-alt: Rule.Term<f> (lws+ '|' -> lws+ Rule.Term<f>)+
->   | Rule.Term<f>
-> Rule.Term<f>
->   = rule-ctor: Name.ctor colon Rule.Seq<f>
->   | Rule.Seq<f>
-> Rule.Seq<f>
->   = rule-seq: Rule.Factor<f> (lws+ -> Rule.Factor<f>)+
->   | Rule.Factor<f>
-> Rule.Factor<f>
->   = rule-rep: Rule.Rep.commit<f> Rule.Rep.amount
->   | Rule.Base<f>
-> Rule.Rep.amount
->   = [*+?]
->   | rep-custom: enclose.braces<num.nat? comma num.nat?>
->   | rep-custom: enclose.braces<num.nat>
-> Rule.Rep.commit<f>
->   = rule-commit: enclose.parens<Rule.Seq.allowFlat lws+ "->" lws+ Rule.Seq.allowFlat>
->   | Rule.Base<f>
-> Rule.Base<f>
->   = rule-group: enclose.parens<Rule.allowFlat>
->   | rule-flat: f
->   | Rule.prim
-> Rule.Flat = enclose<'/', Rule.disallowFlat, '/'>
+> Def = Def.Start | Def.Class | Def.Rule
 
-> Rule.allowFlat = Rule<Rule.Flat>
-> Rule.Seq.allowFlat = Rule.Seq<Rule.Flat>
-> Rule.disallowFlat = Rule<$> # TODO use 0:"flat rule inside flat"
+TODO? global rules are upcase, local rules and captures are locase
 
-## Primitive Rules
+TODO In future versions, there will likely be support for importing definitions from other files (with or without qualifying the names), and extending existing rules with additional alternatives; the latter will definitely help the structure of this document!
+
+## Rules
+
+Let's begin by defining the smallest possible rules and work up from there.
+
+- The simplest possible rule is recognizing a single, specific character.
+  This is written as that character in single quotes.
+- Or, one might allow a variety of characters, which we write with a special syntax inside square brackets.
+  We'll come back to that syntax in a moment.
+  Writing a caret immediately after the open bracket inverts the allowed set.
+- One might sequence many specific characters in a row, i.e. a string.
+  These are written inside double-quotes.
+  Unlike writing a sequence of isolated (i.e. single-quote) characters, a string is matched as a whole, so errors are reported at the start of the string, even if a prefix matches.
+- One might also require there to be _no_ characters at a position: that is,
+  requiring one has reached the end of input.
+  This is written (as in regex) with a dollar sign.
+- Finally, to round out the algebra of grammars, we include the zero-rule (a.k.a. void),
+    which always fails, no matter the input.
+  For good error reporting, we require this void grammar to come along with an error message,
+    just in case it is ever the source of a parse failure.
 
 > Rule.prim
->   = rule-call: Name.rule enclose.angles<sep.comma<Rule<Rule.Flat>>>?
->   | rule-char: '\'' char.sq '\''
->   | rule-string: '\"' chars.dq* '\"'
+>   = rule-char: '\'' char.sq '\''
 >   | rule-sat: ("[^" | '[') Rule.satisfy.part* ']'
+>   | rule-string: '\"' chars.dq* '\"'
 >   | rule-end: '$'
->   | rule-void: '0' lws* ':' lws* '\"' chars.dq+ '\"'
+>   | rule-void: '0' colon '\"' chars.dq+ '\"'
+
+To match one of a variety of characters, we enclosing the options in square brackets.
+Specifying these options can be done by specifying individual characters,
+  with a range, or by giving the name of a defined character class inside colons.
+While any character can be given inside single quotes,
+  the quotes are not necessary for many common characters, and can be dropped.
+Whitespace inside the brackets is ignored.
 
 > Rule.satisfy.part
 >   = sat-range: '\'' char.sq '\'' ".." '\'' char.sq '\''
@@ -173,18 +152,110 @@ TODO global rules are upcase, local rules and captures are locase
 >   | / [:char.brack:]+ /
 >   | lws
 
-## Classes
+More complex grammars are built from these primitives by combination by various operators.
+These operators have a precedence, which we will go through from highest-to-lowest (i.e. smallest-to-largest).
+
+The highest-precedence of these are grouping (parenthesis), flattening (slashes), and non-terminals (calls).
+Here we see our first parametric rule definition; for now, I'll just say that parameters and arguments
+  are surrounded by angle brackets and separated by commas.
+In fact, that is just what the `rule-call: …` alternative states.
+
+> Rule.Atom<f>
+>   = rule-group: enclose.parens<Rule.allowFlat>
+>   | rule-call: Name.rule enclose.angles<sep.comma<Rule.allowFlat>>?
+>   | rule-flat: f
+>   | Rule.prim
+>
+> Rule.Flat = enclose<'/', Rule.disallowFlat, '/'>
+
+Because the open and close delimiters of `Rule.Flat` are identical,
+  we cannot allow a flatten operator directly inside another flatten operator.
+This restriction will affect a large number of rules involved in operator precedence.
+Rather than define two separate chains of rules
+  (which increases the grammar's size and makes it possible for
+    the two grammars to get out of sync as changes are made),
+  we instead parameterize every rule in the chain with whether flattening is allowed.
+We've chosen the convention of doing this with the `f` parameter in this grammar.
+This `f` parameter will only be filled with one of two grammars,
+  one to allow it and another to disallow it.
+
+> Rule.allowFlat = Rule<Rule.Flat>
+> Rule.disallowFlat = Rule<$> # TODO use 0:"flat rule inside flat"
+
+Our next set of operators are repetition operators.
+This includes the usual star, plus, question mark, and bounded repetition (curly braces) from regex.
+
+> Rule.Factor<f>
+>   = rule-rep: Rule.Rep.commit<f> Rule.Rep.amount
+>   | Rule.Atom<f>
+>
+> Rule.Rep.amount
+>   = [*+?]
+>   | rep-custom: enclose.braces<num.nat? comma num.nat?>
+>   | rep-custom: enclose.braces<num.nat>
+
+One wrinkle TBNF adds to repetition is to split the repeated grammar into two parts.
+As long as the first grammar fails, that repetition attempt is backtracked,
+  but if the first grammar succeeds while the second fails, the whole repetition fails.
+That is, we can "commit" to a full repetition at a certain point.
+TODO: I have to fix it so that repetitions that require at least one also fail overall.
+This split is indicated by a right-arrow.
+If there is no commit, then it matches as if the second grammar rule is empty.
+
+> Rule.Rep.commit<f>
+>   = rule-commit: enclose.parens<Rule.Seq<Rule.Flat> lws+ "->" lws+ Rule.Seq<Rule.Flat>>
+>   | Rule.Atom<f>
+
+
+Our next operator is sequencing, which is marked simply by separating grammars with whitespace.
+Then, we have our constructor rule, which we have already seen.
+
+> Rule.Seq<f>
+>   = rule-seq: Rule.Factor<f> (lws+ -> Rule.Factor<f>)+
+>   | Rule.Factor<f>
+>
+> Rule.Term<f>
+>   = rule-ctor: Name.ctor colon Rule.Seq<f>
+>   | Rule.Seq<f>
+
+Finally, we have alternation, which is done with 
+As in PEGs, this is ordered choice, so it introduces no ambiguity.
+
+> Rule<f>
+>   = rule-alt: Rule.Term<f> (lws+ '|' -> lws+ Rule.Term<f>)+
+>   | Rule.Term<f>
+
+## Character Classes
+
+Character classes are simply sets of admissible Unicode characters.
+The only operators are union and difference, which have the same associativity,
+  and are right-associative.
 
 > Class = Class.term (lws+ Class.operator -> lws+ Class.term)*
->
 > Class.operator = '|' | '-'
+
+As for the primitive sets, there are:
+- A single character, in single quotes.
+- A select few characters, in double quotes.
+- A range of characters, written as dobule-dots between the single-quoted (inclusive) endpoints.
+- Another named character class.
+
 > Class.term
 >   = class-var: enclose.colon<Name.class>
 >   | class-range: '\'' char.sq '\'' ".." '\'' char.sq '\''
 >   | class-char: '\'' char.sq '\''
 >   | class-set: '\"' chars.dq* '\"'
 
-## String and Character Literals
+## Supporting Definitions
+
+Finally, we've been using all sorts of rules above that are likely easily-guessable
+  based on one's knowledge of other grammars, and the examples already given.
+We still need to define them for the computer though, so I'll go through these quickly.
+
+### String and Character Literals
+
+Single- and double-quoted strings admit the usual backslash-based escape sequences.
+TODO right now, unescaped is just ASCII, but should probably include Unicode printing chars
 
 > char.sq
 >   = [:char.sq:]
@@ -196,7 +267,11 @@ TODO global rules are upcase, local rules and captures are locase
 >   | char.escape
 > :char.dq: = ' '..'~' - "\"\\"
 >
-> :char.brack: = :ascii.print: - " []\'\"-:\\"
+
+The actual set of escape sequences is close to C, with `\x`, `\u`, and `\U`
+  allowing different sizes of character.
+Note that simple backslash-digits is not allowed (it can be ambiguous), though `\0` _is_ allowed.
+Also, we include `\e` for ASCII escape, just because it is common enough in other languages.
 
 > char.escape
 >   = char-escape: / '\\' [:char.escape.c:] /
@@ -210,36 +285,34 @@ TODO global rules are upcase, local rules and captures are locase
 > :char.escape.c: = "0abefnrtv"
 > :char.escape.passthru: = :ascii.print: - :char.escape.c: - "xuU"
 
-## Names
+The (unquoted) characters admissible within square brackets are quite different.
+In particular, we've gone a bit overboard disallowing certain characters that
+  wouldn't otherwise cause a problem wit hthe syntax.
+However, we thought it best to disallow them to reduce confusion
+  by removing some characters that usually have special meaning in regex,
+  and ensuring symmetry in the definition
+
+> :char.brack: = :ascii.print: - " []\'\"-:\\"
+
+### Names
+
+Names appear in a variety of places in the grammar.
+We've collected them here so that one can see at a glance what is allowed.
+Generally, they are alphanumeric strings separated with dots and/or dashes.
 
 > Name.rule = / sep.dot<[:ascii.alpha:] [:ascii.alpha-num:]*> /
 >
 > Name.param = / [:ascii.alpha:] [:ascii.alpha-num:]* /
-
-TODO: should this really by separated by dash? seems incongruent
+>
+> # TODO: should this really by separated by dash? seems incongruent
 > Name.ctor = / sep.dash<[:ascii.alpha:] [:ascii.alpha-num:]*> /
-
+>
 > Name.class = / sep.dot<[:ascii.alpha:] [:ascii.alpha-num:'\-']*> /
 
-## General Combinators
+### Generic Character Classes
 
-> enclose<o,i,c> = o lws* i lws* c
->
-> enclose.parens<i> = enclose<'(',i,')'>
-> enclose.braces<i> = enclose<'{',i,'}'>
-> enclose.angles<i> = enclose<'<',i,'>'>
-> enclose.colon<i> = enclose<':',i,':'>
-
-> comma = lws* ',' lws*
-> colon = lws* ':' lws+
-
-> sep.by<e,s> = e (s -> e)*
->
-> sep.comma<e> = sep.by<e,comma>
-> sep.dot<e> = sep.by<e,'.'>
-> sep.dash<e> = sep.by<e,'-'>
-
-## Basics
+These character class definitions are widely-used notions.
+Once grammar libraries/import is implemented, these will be moved to a library.
 
 > :ascii.print: = ' '..'~'
 
@@ -251,4 +324,27 @@ TODO: should this really by separated by dash? seems incongruent
 > :ascii.alpha.hi: = 'A'..'Z'
 > :ascii.alpha-num: = :ascii.alpha: | :digit:
 
+Ah yes, and we also needed decimal natural numbers, which I may as well throw in here.
+
 > num.nat = / [:digit:] [:digit:]* /
+
+### General Combinators
+
+And finally, there are a number of general-purpose grammar combinators.
+These make it easy to describe conceptually-simple — but technically detailed — pieces of grammar.
+
+> enclose<o,i,c> = o lws* i lws* c
+>
+> enclose.parens<i> = enclose<'(',i,')'>
+> enclose.braces<i> = enclose<'{',i,'}'>
+> enclose.angles<i> = enclose<'<',i,'>'>
+> enclose.colon<i> = enclose<':',i,':'>
+
+> sep.by<e,s> = e (s -> e)*
+>
+> sep.comma<e> = sep.by<e,comma>
+> sep.dot<e> = sep.by<e,'.'>
+> sep.dash<e> = sep.by<e,'-'>
+
+> comma = lws* ',' lws*
+> colon = lws* ':' lws+
