@@ -18,7 +18,7 @@ import qualified Text.Texpr.Bootstrap as Tbnf
 import qualified Text.Texpr.Compile as C
 
 main :: IO ()
-main = main2
+main = main1
 
 ------------------------------------
 
@@ -66,7 +66,7 @@ main1 = do
   print $ runPeg Map.empty g3 (startInput "12345")
   print $ runPeg Map.empty g3 (startInput "123a45")
   print $ runPeg Map.empty g3 (startInput "a45")
-  -- print $ runPeg Map.empty (Fail "uh-oh") (startInput "")
+  print $ runPeg Map.empty (Void "uh-oh") (startInput "")
   print $ runPeg Map.empty charSetGrammar (startInput "[!-[^-~]")
   print $ runPeg Map.empty charSetGrammar (startInput "[ \\  abefnrtv \\\\ \\\'\\\" \\[\\-\\]]")
   print $ runPeg Map.empty charSetGrammar (startInput "[\\U123ABC]")

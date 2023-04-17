@@ -1,9 +1,5 @@
 # TBNF Grammar
 
-TODO: make it so that the rule name "start" is the default start rule, not simply whatever rule comes first.
-> start = ("" -> top)* $
-
-
 TBNF is a language for specifying a variant of parser expression grammars.
 Successful output from a TBNF grammar is a t-expression containing, in-order,
   every character of the original input.
@@ -46,6 +42,8 @@ We can see that definitions begin at the start of a line, and there may be linea
 Additionally, it is possible to have blank code lines, called here "vertical whitespace" `vws`.
 Before moving on to definitions, I'll describe what is allowed for both linear and vertical whitespace.
 
+> start = ("" -> top)* $
+>
 > top
 >   = Doc
 >   | birdFoot Def lws* (nl | $)

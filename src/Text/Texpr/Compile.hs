@@ -28,9 +28,9 @@ data Error
   = CircularClassDefinitions [(FwdRange, String)]
   | DuplicateClassDefinitions [FwdRange] String
   | DuplicateRuleDefinitions [FwdRange] String
-  | EmptyGrammar
   | EmptyRange FwdRange Char Char
   | EmptyRepetition FwdRange Int Int
+  | NoStartRule
   | StartRuleCannotBeParametric FwdRange String [String]
   | UndefinedClass FwdRange String
   | UndefinedRule FwdRange String
@@ -47,9 +47,13 @@ compile peg = do
 ------------------ Start Rule ------------------
 
 compileStart :: StartDef -> [RuleDef] -> Either [Error] Tree.Rule
-compileStart Nothing [] = Left [EmptyGrammar]
-compileStart Nothing ((_, (_, g, []), _):_) = pure $ Tree.Call g []
-compileStart Nothing ((_, (r, g, params), _):_) = Left [StartRuleCannotBeParametric r g params]
+compileStart Nothing rules = case find isStart rules of
+  Just (_, (_, g, []), _) -> pure $ Tree.Call g []
+  Just (_, (r, g, params), _) ->Left [StartRuleCannotBeParametric r g params]
+  Nothing -> Left [NoStartRule]
+  where
+  isStart (_, (_, "start", _), _) = True
+  isStart _ = False
 compileStart (Just (r, x)) gs = case find (\(_, (_, y, _), _) -> x == y) gs of
   Just (_, (_, g, []), _) -> pure $ Tree.Call g []
   Just (_, (r', g, params), _) -> Left [StartRuleCannotBeParametric r' g params]
@@ -100,6 +104,7 @@ compileRule st = \case
     cls <- mergeEithers $ compileSatisfy st.classes <$> sats
     pure $ Tree.Sat (CS.complement cls)
   Char _ c -> pure $ Tree.Sat (CS.singleton c)
+  Str _ "" -> pure $ Tree.Empty
   Str _ str -> pure $ Tree.Str str
   End _ -> pure Tree.End
   Void _ msg -> pure $ Tree.Void msg

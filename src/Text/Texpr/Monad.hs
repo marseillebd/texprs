@@ -73,7 +73,6 @@ many cs = Parse $ \_ inp -> case span (`CS.elem` cs) inp.txt of
     loc' = Loc.advance inp.loc ok
 
 string :: String -> Parse Texprs
-string "" = Parse $ \_ inp -> Right ([], inp)
 string str = Parse $ \env inp -> case stripPrefix str inp.txt of
   Just txt' -> Right ([t], Input loc' txt')
     where
@@ -115,9 +114,11 @@ star g1 g2 = do
         -- WARNING wow, this is the one place I use setInput, and I just find it gross
         | null err.prior -> setInput inp0 >> pure []
         | otherwise -> rethrow err{prior = ts1 <> err.prior}
-      Right ((ts1 <>) -> ts)
-        | null ts -> pure [] -- to prevent infinite loops when the repeated grammar accepts empty
-        | otherwise -> (ts <>) <$> mapErr (star g1 g2) (\err -> err{prior = ts <> err.prior})
+      Right ts2 -> do
+        inp' <- getInput
+        if inp'.loc == inp0.loc
+          then pure [] -- to prevent infinite loops when the repeated grammar accepts empty
+          else ((ts1 <> ts2) <>) <$> mapErr (star g1 g2) (\err -> err{prior = ts1 <> ts2 <> err.prior})
 
 ctor :: String -> Rule -> Parse Texprs
 ctor name g = do
