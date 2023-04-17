@@ -29,7 +29,7 @@ type RuleDef = (FwdRange, (FwdRange, String, [String]), Rule)
 data Rule
   = Alt FwdRange [Rule]
   | Seq FwdRange [Rule]
-  | Rep FwdRange (Rule, Maybe Rule) (Int, Maybe Int)
+  | Rep FwdRange Rule (Int, Maybe Int)
   | Sat FwdRange [SatClass]
   | SatNeg FwdRange [SatClass]
   | Char FwdRange Char

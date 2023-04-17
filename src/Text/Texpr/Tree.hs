@@ -5,7 +5,6 @@ module Text.Texpr.Tree
   ( Rule(..)
   , pattern Alt
   , pattern Seq
-  , pattern Star
   ) where
 
 import Data.CharSet (CharSet)
@@ -46,7 +45,7 @@ data Rule
   | Alt2 Rule Rule
   | Empty
   | Seq2 Rule Rule
-  | Star2 Rule Rule
+  | Star Rule
   | Ctor String Rule
   | Flat Rule
   | AsUnit Rule -- ^ if the rule fails, fail as soon as the rule started (i.e. like an `Expect`, but no new error message)
@@ -74,6 +73,3 @@ pattern Seq ts <- (fromSeq -> ts@(_:_:_))
 fromSeq :: Rule -> [Rule]
 fromSeq (Seq2 g1 g2) = fromSeq g1 <> fromSeq g2
 fromSeq g = [g]
-
-pattern Star :: Rule -> Rule
-pattern Star g = Star2 Empty g

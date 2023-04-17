@@ -93,10 +93,9 @@ compileRule st = \case
   Seq _ gs -> Tree.Seq <$> compileRule st `mapM` gs
   -- Rep FwdRange (Rule, Maybe Rule) (Int, Maybe Int)
   Rep loc _ (lo, Just hi) | lo > hi -> Left [EmptyRepetition loc lo hi]
-  Rep _ (g1, g2) (lo, hi) -> do
-    g1' <- compileRule st g1
-    g2' <- maybe (pure Tree.Empty) (compileRule st) g2
-    pure $ compileRep g1' g2' lo hi
+  Rep _ g (lo, hi) -> do
+    g' <- compileRule st g
+    pure $ compileRep g' lo hi
   Sat _ sats -> do
     cls <- mergeEithers $ compileSatisfy st.classes <$> sats
     pure $ Tree.Sat cls
@@ -116,17 +115,17 @@ compileRule st = \case
     Nothing -> Left [UndefinedRule loc f]
   Ctor _ name g -> Tree.Ctor name <$> compileRule st g
 
-compileRep :: Tree.Rule -> Tree.Rule -> Int -> Maybe Int -> Tree.Rule
-compileRep !g1 !g2 !n0 Nothing = loop n0
+compileRep :: Tree.Rule -> Int -> Maybe Int -> Tree.Rule
+compileRep !g !n0 Nothing = loop n0
   where
-  loop 0 = Tree.Star2 g1 g2
-  loop !n = Tree.Seq [ g1, g2, loop (n - 1) ]
-compileRep !g1 !g2 !n0 (Just !m0) = loop n0 m0
+  loop 0 = Tree.Star g
+  loop !n = Tree.Seq [ g, loop (n - 1) ]
+compileRep !g !n0 (Just !m0) = loop n0 m0
   where
   loop 0 0 = Tree.Empty
-  loop 0 1 = Tree.Seq [ g1, g2 ] `Tree.Alt2` Tree.Empty
-  loop 0 !m = (Tree.Seq [ g1, g2, loop 0 (m - 1) ]) `Tree.Alt2` Tree.Empty
-  loop !n !m = Tree.Seq [ g1, g2, loop (n - 1) (m - 1) ]
+  loop 0 1 = g `Tree.Alt2` Tree.Empty
+  loop 0 !m = (Tree.Seq [ g, loop 0 (m - 1) ]) `Tree.Alt2` Tree.Empty
+  loop !n !m = Tree.Seq [ g, loop (n - 1) (m - 1) ]
 
 compileSatisfy :: Map String CharSet -> SatClass -> Either [Error] CharSet
 compileSatisfy clss = \case

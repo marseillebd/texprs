@@ -13,9 +13,11 @@ import Prelude hiding (fail,sequence)
 import Data.CharSet (CharSet)
 import Data.List (isPrefixOf,stripPrefix)
 import Data.Map (Map)
+import Data.Bifunctor (first,second)
 import Data.Maybe (maybeToList)
 import Data.Set (Set)
 import Data.Texpr (Texprs,Texpr(..),Reason(..),noReason,flatten,unparse)
+import Data.These (These(..))
 import Text.Location (Input(..),Source(..),Position(..),FwdRange,fwd)
 import Text.Texpr.Tree (Rule(..))
 
@@ -27,8 +29,9 @@ import qualified Text.Location as Loc
 
 runPeg :: Map String ([String], Rule) -> Rule -> Input -> Either ErrorReport (Texprs, Input)
 runPeg ruleSet startRule inp0 = case go of
-  Right (a, inp) -> Right (a, inp)
-  Left err -> Left err
+  This ok -> Right ok
+  That err -> Left err
+  These ok _ -> Right ok
   where
   go = unParse (parse startRule) env0 inp0
   env0 = Env { global = ruleSet, local = Map.empty, captures = Map.empty }
@@ -45,7 +48,7 @@ parse = \case
   Alt2 g1 g2 -> alternate g1 g2
   Empty -> pure []
   Seq2 g1 g2 -> sequence g1 g2
-  Star2 g1 g2 -> star g1 g2
+  Star g -> star g
   Ctor name g -> ctor name g
   Flat g -> flat g
   AsUnit g -> asUnit g
@@ -58,7 +61,7 @@ parse = \case
 
 satisfy :: CharSet -> Parse Texprs
 satisfy cs = Parse $ \env inp -> case inp.txt of
-  c:txt' | c `CS.elem` cs -> Right ([t], Input loc' txt')
+  c:txt' | c `CS.elem` cs -> This ([t], Input loc' txt')
     where
     t = Atom (fwd inp.loc loc') (c:"")
     loc' = Loc.advance inp.loc [c]
@@ -67,14 +70,14 @@ satisfy cs = Parse $ \env inp -> case inp.txt of
 
 many :: CharSet -> Parse Texprs
 many cs = Parse $ \_ inp -> case span (`CS.elem` cs) inp.txt of
-  (ok, txt') -> Right ([t], Input loc' txt')
+  (ok, txt') -> This ([t], Input loc' txt')
     where
     t = Atom (fwd inp.loc loc') ok
     loc' = Loc.advance inp.loc ok
 
 string :: String -> Parse Texprs
 string str = Parse $ \env inp -> case stripPrefix str inp.txt of
-  Just txt' -> Right ([t], Input loc' txt')
+  Just txt' -> This ([t], Input loc' txt')
     where
     t = Atom (fwd inp.loc loc') str
     loc' = Loc.advance inp.loc str
@@ -83,7 +86,7 @@ string str = Parse $ \env inp -> case stripPrefix str inp.txt of
 
 end :: Parse Texprs
 end = Parse $ \env inp -> case inp.txt of
-  "" -> Right ([], inp)
+  "" -> This ([], inp)
   _ -> unParse (throw explain) env inp
     where explain = (noReason inp.loc){expectingEndOfInput = True}
 
@@ -104,21 +107,16 @@ sequence g1 g2 = do
   ts2 <- parse g2 `mapErr` \err -> err{prior = ts1 <> err.prior}
   pure $ ts1 <> ts2
 
-star :: Rule -> Rule -> Parse Texprs
-star g1 g2 = do
+star :: Rule -> Parse Texprs
+star g = do
   inp0 <- getInput
-  catch (parse g1) >>= \case
+  catch (parse g) >>= \case
     Left _ -> pure []
-    Right ts1 -> catch (parse g2) >>= \case
-      Left err
-        -- WARNING wow, this is the one place I use setInput, and I just find it gross
-        | null err.prior -> setInput inp0 >> pure []
-        | otherwise -> rethrow err{prior = ts1 <> err.prior}
-      Right ts2 -> do
-        inp' <- getInput
-        if inp'.loc == inp0.loc
-          then pure [] -- to prevent infinite loops when the repeated grammar accepts empty
-          else ((ts1 <> ts2) <>) <$> mapErr (star g1 g2) (\err -> err{prior = ts1 <> ts2 <> err.prior})
+    Right ts -> do
+      inp' <- getInput
+      if inp'.loc == inp0.loc
+        then pure [] -- to prevent infinite loops when the repeated grammar accepts empty
+        else (ts <>) <$> mapErr (star g) (\err -> err{prior = ts <> err.prior})
 
 ctor :: String -> Rule -> Parse Texprs
 ctor name g = do
@@ -168,7 +166,7 @@ subst = \case
   Alt2 g1 g2 -> Alt2 <$> subst g1 <*> subst g2
   Empty -> pure Empty
   Seq2 g1 g2 -> Seq2 <$> subst g1 <*> subst g2
-  Star2 g1 g2 -> Star2 <$> subst g1 <*> subst g2
+  Star g -> Star <$> subst g
   Ctor name g -> Ctor name <$> subst g
   Flat g -> Flat <$> subst g
   AsUnit g -> AsUnit <$> subst g
@@ -215,7 +213,7 @@ performSkip :: ErrorReport -> Rule -> Parse (Source, Source)
 performSkip err g = Parse $ \env inp ->
   let tsLoc = if null err.prior then inp.loc else Texpr.end (last err.prior)
       remaining' = advanceTo (next g env) err.remaining
-   in Right ( ( Loc.slice inp (fwd tsLoc err.remaining.loc)
+   in This  ( ( Loc.slice inp (fwd tsLoc err.remaining.loc)
               , Loc.slice err.remaining (fwd err.remaining.loc remaining'.loc)
               )
             , remaining'
@@ -223,7 +221,7 @@ performSkip err g = Parse $ \env inp ->
 
 ------ The Monad ------
 
-newtype Parse a = Parse { unParse :: Env -> Input -> Either ErrorReport (a, Input) }
+newtype Parse a = Parse { unParse :: Env -> Input -> These (a, Input) ErrorReport }
 
 data Env = Env
   { global :: Map String ([String], Rule)
@@ -246,48 +244,48 @@ instance Semigroup ErrorReport where
     LT -> b
 
 instance Functor Parse where
-  fmap f (Parse action) = Parse $ \env inp -> case action env inp of
-    Right (x, inp') -> Right (f x, inp')
-    Left err -> Left err
+  fmap f (Parse action) = Parse $ \env inp -> first (first f) $ action env inp
 
 instance Applicative Parse where
-  pure x = Parse $ \_ inp -> Right (x, inp)
+  pure x = Parse $ \_ inp -> This (x, inp)
   Parse action <*> Parse action' = Parse $ \env inp -> case action env inp of
-    Right (f, inp') -> case action' env inp' of
-      Right (x, inp'') -> Right (f x, inp'')
-      Left err -> Left err
-    Left err -> Left err
+    This (f, inp') -> first (first f) $ action' env inp'
+    That err -> That err
+    These (f, inp') err -> case action' env inp' of
+      This ok -> These (first f ok) err
+      That err' -> That (err <> err')
+      These ok err' -> These (first f ok) (err <> err')
 
 instance Monad Parse where
   Parse action >>= k = Parse $ \env inp -> case action env inp of
-    Right (x, inp') -> unParse (k x) env inp'
-    Left err -> Left err
+    This (x, inp') -> unParse (k x) env inp'
+    That err -> That err
+    These (x, inp') err -> case unParse (k x) env inp' of
+      This ok -> These ok err
+      That err' -> That (err <> err')
+      These ok err' -> These ok (err <> err')
 
 throw :: Reason -> Parse a
-throw reason = Parse $ \_ remaining -> Left $
+throw reason = Parse $ \_ remaining -> That $
   Err { prior = [], reason, remaining }
 
 rethrow :: ErrorReport -> Parse a
-rethrow err = Parse $ \_ _ -> Left err
+rethrow err = Parse $ \_ _ -> That err
 
 catch :: Parse a -> Parse (Either ErrorReport a)
 catch action = Parse $ \env inp -> case unParse action env inp of
-  Right (ok, inp') -> Right (Right ok, inp')
-  Left err -> Right (Left err, inp)
+  This (ok, inp') -> This (Right ok, inp')
+  That err -> These (Left err, inp) err
+  These (ok, inp') err -> These (Right ok, inp') err
 
 mapErr :: Parse a -> (ErrorReport -> ErrorReport) -> Parse a
-mapErr action f = Parse $ \env inp -> case unParse action env inp of
-  Right ok -> Right ok
-  Left err -> Left (f err)
+mapErr action f = Parse $ \env inp -> second f $ unParse action env inp
 
 getInput :: Parse Input
-getInput = Parse $ \_ inp -> Right (inp, inp)
-
-setInput :: Input -> Parse ()
-setInput inp = Parse $ \_ _ -> Right ((), inp)
+getInput = Parse $ \_ inp -> This (inp, inp)
 
 getPosition :: Parse Position
-getPosition = Parse $ \_ inp -> Right (inp.loc, inp)
+getPosition = Parse $ \_ inp -> This (inp.loc, inp)
 
 withRange :: Parse a -> Parse (FwdRange, a)
 withRange action = do
@@ -305,13 +303,13 @@ withCapture x v action = Parse $ \env inp ->
    in unParse action env' inp
 
 lookupGlobal :: String -> Parse (Maybe ([String], Rule))
-lookupGlobal x = Parse $ \env inp -> Right (Map.lookup x env.global, inp)
+lookupGlobal x = Parse $ \env inp -> This (Map.lookup x env.global, inp)
 
 lookupLocal :: String -> Parse (Maybe Rule)
-lookupLocal x = Parse $ \env inp -> Right (Map.lookup x env.local, inp)
+lookupLocal x = Parse $ \env inp -> This (Map.lookup x env.local, inp)
 
 lookupCapture :: String -> Parse (Maybe String)
-lookupCapture x = Parse $ \env inp -> Right (Map.lookup x env.captures, inp)
+lookupCapture x = Parse $ \env inp -> This (Map.lookup x env.captures, inp)
 
 ------ Error Recovery ------
 
@@ -367,7 +365,7 @@ next = \case
   Seq2 g1 g2 -> \env ->
     let n1 = next g1 env
      in if n1.acceptEmpty then n1 <> next g2 env else n1
-  Star2 g1 g2 -> \env -> (next (Seq2 g1 g2) env){acceptEmpty = True}
+  Star g -> \env -> (next g env){acceptEmpty = True}
   Ctor _ g -> next g
   Flat g -> next g
   AsUnit g -> next g

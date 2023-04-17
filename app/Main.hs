@@ -10,7 +10,7 @@ import Data.Map (Map)
 import System.Exit (exitFailure)
 import Text.Location (startInput)
 import Text.Texpr.Monad (runPeg,ErrorReport(..))
-import Text.Texpr.Tree (Rule(..),pattern Alt,pattern Seq,pattern Star)
+import Text.Texpr.Tree (Rule(..),pattern Alt,pattern Seq)
 
 import qualified Data.CharSet as CS
 import qualified Data.Map as Map
@@ -82,6 +82,7 @@ main1 = do
   print $ uncurry runPeg g6 (startInput "(1)(23)(456)")
   print $ runPeg Map.empty g7 (startInput "123")
   print $ runPeg Map.empty g7 (startInput "12")
+  print $ runPeg Map.empty g8 (startInput "1<0>1")
 
 g1 :: Rule
 g1 = Seq
@@ -163,3 +164,17 @@ g7 :: Rule
 g7 = Expect "ThreeDigits" $ Seq [digit, digit, digit]
   where
   digit = Sat $ CS.contiguous '0' '9'
+
+g8 :: Rule
+g8 = Seq
+  [ Sat $ CS.singleton '1'
+  , Alt
+    [ Seq
+      [ Sat $ CS.singleton '<'
+      , Sat $ CS.singleton '1'
+      , Sat $ CS.singleton '>'
+      ]
+    , Empty
+    ]
+  , Sat $ CS.singleton '1'
+  ]

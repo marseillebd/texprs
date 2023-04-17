@@ -6,12 +6,12 @@
   - currently, if _anything_ matched under a star, a subsequent error under the same star will be an error
   - however, I'd like to allow some _subset_ of the sequence to match, and _only then_ will subsequent errors lift out of the star
 - fixes:
-  - [ ] report deepest error
+  - [x] report deepest error
     - even if a rule succeeds, it may have had error branches further in
     - an enclosing rule could fail because of an error in a successful rule
-    - [ ] even on success, save the deepest error
-    - [ ] when a rule fails after successes, report the deepest between the saved and immediate errors
-    - [ ] eliminate the repetition-commit part of the grammar
+    - [x] even on success, save the deepest error
+    - [x] when a rule fails after successes, report the deepest between the saved and immediate errors
+    - [x] eliminate the repetition-commit part of the grammar
   - [x] if input has not advanced in Star, then the combinator should not recurse
 - cleanup:
   - [x] output tbnf.tbnf Define form to Haskell
@@ -19,13 +19,14 @@
       - possibly just use hackage `range` library
   - [x] import control
   - [x] Rule.Void
-  - [ ] Texpr vs RawTexpr
   - [ ] newtypes for restricted strings
     - [ ] global rule names should begin with a capital letter
     - [ ] local rule names and captures should begin with a lowercase letter
     - [ ] instead of inserting `Capture` for rules that have some capitalization, mark it explicitly, but anywhere
           using `<ctor-name> : <grammar>` syntax that binds more loosely than alt
-  - [x] documentation
+  - [ ] Texpr vs RawTexpr
+  - [x] documentation if TBNF
+  - [ ] hackage docs
   - [x] better position type
   - [x] ErrorReport should be a record
   - [x] Texpr.Error (and ErrorReport) should carry a "reason", which is just the expected set + position

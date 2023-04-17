@@ -42,7 +42,7 @@ We can see that definitions begin at the start of a line, and there may be linea
 Additionally, it is possible to have blank code lines, called here "vertical whitespace" `vws`.
 Before moving on to definitions, I'll describe what is allowed for both linear and vertical whitespace.
 
-> start = ("" -> top)* $
+> start = top* $
 >
 > top
 >   = Doc
@@ -184,7 +184,7 @@ Our next set of operators are repetition operators.
 This includes the usual star, plus, question mark, and bounded repetition (curly braces) from regex.
 
 > Rule.Factor<f>
->   = rule-rep: Rule.Rep.commit<f> Rule.Rep.amount
+>   = rule-rep: Rule.Atom<f> Rule.Rep.amount
 >   | Rule.Atom<f>
 >
 > Rule.Rep.amount
@@ -192,24 +192,11 @@ This includes the usual star, plus, question mark, and bounded repetition (curly
 >   | rep-custom: enclose.braces<num.nat? comma num.nat?>
 >   | rep-custom: enclose.braces<num.nat>
 
-One wrinkle TBNF adds to repetition is to split the repeated grammar into two parts.
-As long as the first grammar fails, that repetition attempt is backtracked,
-  but if the first grammar succeeds while the second fails, the whole repetition fails.
-That is, we can "commit" to a full repetition at a certain point.
-TODO: I have to fix it so that repetitions that require at least one also fail overall.
-This split is indicated by a right-arrow.
-If there is no commit, then it matches as if the second grammar rule is empty.
-
-> Rule.Rep.commit<f>
->   = rule-commit: enclose.parens<Rule.Seq<Rule.Flat> lws+ "->" lws+ Rule.Seq<Rule.Flat>>
->   | Rule.Atom<f>
-
-
 Our next operator is sequencing, which is marked simply by separating grammars with whitespace.
 Then, we have our constructor rule, which we have already seen.
 
 > Rule.Seq<f>
->   = rule-seq: Rule.Factor<f> (lws+ -> Rule.Factor<f>)+
+>   = rule-seq: Rule.Factor<f> (lws+ Rule.Factor<f>)+
 >   | Rule.Factor<f>
 >
 > Rule.Term<f>
@@ -220,7 +207,7 @@ Finally, we have alternation, which is done with
 As in PEGs, this is ordered choice, so it introduces no ambiguity.
 
 > Rule<f>
->   = rule-alt: Rule.Term<f> (lws+ '|' -> lws+ Rule.Term<f>)+
+>   = rule-alt: Rule.Term<f> (lws+ '|' lws+ Rule.Term<f>)+
 >   | Rule.Term<f>
 
 ## Character Classes
@@ -229,7 +216,7 @@ Character classes are simply sets of admissible Unicode characters.
 The only operators are union and difference, which have the same associativity,
   and are right-associative.
 
-> Class = Class.term (lws+ Class.operator -> lws+ Class.term)*
+> Class = Class.term (lws+ Class.operator lws+ Class.term)*
 > Class.operator = '|' | '-'
 
 As for the primitive sets, there are:
@@ -338,7 +325,7 @@ These make it easy to describe conceptually-simple — but technically detailed 
 > enclose.angles<i> = enclose<'<',i,'>'>
 > enclose.colon<i> = enclose<':',i,':'>
 
-> sep.by<e,s> = e (s -> e)*
+> sep.by<e,s> = e (s e)*
 >
 > sep.comma<e> = sep.by<e,comma>
 > sep.dot<e> = sep.by<e,'.'>
