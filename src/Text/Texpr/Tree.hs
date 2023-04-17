@@ -1,7 +1,12 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Text.Texpr.Tree where
+module Text.Texpr.Tree
+  ( Rule(..)
+  , pattern Alt
+  , pattern Seq
+  , pattern Star
+  ) where
 
 import Data.CharSet (CharSet)
 
@@ -37,7 +42,7 @@ data Rule
   | Many CharSet -- ^ just an efficient synonym for a flattened sequence of singleton char sets
   | Str String -- ^ just an efficient synonym for a flattened sequence of singleton char sets
   | End
-  | Void
+  | Void String -- ^ includes a message
   | Alt2 Rule Rule
   | Empty
   | Seq2 Rule Rule
@@ -46,7 +51,6 @@ data Rule
   | Flat Rule
   | AsUnit Rule -- ^ if the rule fails, fail as soon as the rule started (i.e. like an `Expect`, but no new error message)
   | Expect String Rule
-  --- | Fail String -- TODO probably add a Rule arg so that we can say "not expecting a foo when the rule succeeds
   | Call String [Rule] -- lookup a binding in the current environment and match it
   | Capture String Rule Rule -- i.e. capture string as the text matching Rule₁ and use that binding in Rule₂
   | Replay String -- rather than calling, so we don't have to save an environment
@@ -56,7 +60,7 @@ data Rule
 pattern Alt :: [Rule] -> Rule
 pattern Alt ts <- (fromAlt -> ts@(_:_:_))
   where
-  Alt [] = End -- TODO should be Void
+  Alt [] = Void "anything"
   Alt (t:ts) = foldl Alt2 t ts
 fromAlt :: Rule -> [Rule]
 fromAlt (Alt2 g1 g2) = fromAlt g1 <> fromAlt g2
@@ -73,6 +77,3 @@ fromSeq g = [g]
 
 pattern Star :: Rule -> Rule
 pattern Star g = Star2 Empty g
-
-pattern Star1 :: Rule -> Rule
-pattern Star1 g = Star2 g Empty

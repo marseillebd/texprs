@@ -3,7 +3,10 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Text.Texpr.Monad where
+module Text.Texpr.Monad
+  ( runPeg
+  , ErrorReport(..)
+  ) where
 
 import Prelude hiding (fail,sequence)
 
@@ -38,7 +41,7 @@ parse = \case
   Many cs -> many cs
   Str str -> string str
   End -> end
-  Void -> void
+  Void msg -> void msg
   Alt2 g1 g2 -> alternate g1 g2
   Empty -> pure []
   Seq2 g1 g2 -> sequence g1 g2
@@ -59,7 +62,7 @@ satisfy cs = Parse $ \env inp -> case inp.txt of
     where
     t = Atom (fwd inp.loc loc') (c:"")
     loc' = Loc.advance inp.loc [c]
-  _ -> unParse (throw explain) env inp -- TODO can I get these explains inlined?
+  _ -> unParse (throw explain) env inp
     where explain = (noReason inp.loc){expectingChars = cs} -- WARNING I'm assuming cs is a non-empty set
 
 many :: CharSet -> Parse Texprs
@@ -85,12 +88,10 @@ end = Parse $ \env inp -> case inp.txt of
   _ -> unParse (throw explain) env inp
     where explain = (noReason inp.loc){expectingEndOfInput = True}
 
-void :: Parse Texprs
-void = errorWithoutStackTrace "TODO: void"
--- void = Parse $ \env inp -> case inp.txt of
---   "" -> Right ([], inp)
---   _ -> unParse (throw explain) env inp
---     where explain = (noReason inp.loc){expectingEndOfInput = True}
+void :: String -> Parse Texprs
+void msg = Parse $ \env inp ->
+  let explain = (noReason inp.loc){unexpected = Set.singleton msg}
+   in unParse (throw explain) env inp
 
 alternate :: Rule -> Rule -> Parse Texprs
 alternate g1 g2 = do
@@ -162,7 +163,7 @@ subst = \case
   Many cs -> pure $ Many cs
   Str txt -> pure $ Str txt
   End -> pure End
-  Void -> pure Void
+  Void msg -> pure $ Void msg
   Alt2 g1 g2 -> Alt2 <$> subst g1 <*> subst g2
   Empty -> pure Empty
   Seq2 g1 g2 -> Seq2 <$> subst g1 <*> subst g2
@@ -359,7 +360,7 @@ next = \case
     , acceptEmpty = False
     }
   End -> const $ mempty
-  Void -> const $ mempty
+  Void _ -> const $ mempty
   Alt2 g1 g2 -> \env -> next g1 env <> next g2 env
   Empty -> const $ mempty{acceptEmpty = True}
   Seq2 g1 g2 -> \env ->

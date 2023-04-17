@@ -7,7 +7,9 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Text.Texpr.Compile where
+module Text.Texpr.Compile
+  ( compile
+  ) where
 
 import Control.Monad (foldM)
 import Data.CharSet (CharSet)
@@ -100,6 +102,7 @@ compileRule st = \case
   Char _ c -> pure $ Tree.Sat (CS.singleton c)
   Str _ str -> pure $ Tree.Str str
   End _ -> pure Tree.End
+  Void _ msg -> pure $ Tree.Void msg
   Flat _ g -> Tree.Flat <$> compileRule st g
   Call loc f args -> case Map.lookup f st.arities of
     Just ar

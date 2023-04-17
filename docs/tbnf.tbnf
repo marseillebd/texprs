@@ -180,7 +180,7 @@ This `f` parameter will only be filled with one of two grammars,
   one to allow it and another to disallow it.
 
 > Rule.allowFlat = Rule<Rule.Flat>
-> Rule.disallowFlat = Rule<$> # TODO use 0:"flat rule inside flat"
+> Rule.disallowFlat = Rule<0: "flat rule inside flat">
 
 Our next set of operators are repetition operators.
 This includes the usual star, plus, question mark, and bounded repetition (curly braces) from regex.

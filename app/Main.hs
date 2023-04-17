@@ -151,7 +151,7 @@ g6 =
   , line
   )
   where
-  line = Star (Call "parens" [Call "num" []]) `Recover` Void
+  line = Star (Call "parens" [Call "num" []]) `Recover` Void "anything"
   parens = Ctor "Number" $
               Str "("
        `Seq2` Call "inner" []

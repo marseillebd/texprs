@@ -5,8 +5,11 @@
   - however, I'd like to allow some _subset_ of the sequence to match, and _only then_ will subsequent errors lift out of the star
 - cleanup:
   - [x] output tbnf.tbnf Define form to Haskell
-  - [ ] module Data.Range (ORDS(DisjointGT,TangentGT,OverlapGT,ContainGT,EQ,..)Ords(compares))
-  - [ ] import control
+  - [?] module Data.Range (ORDS(DisjointGT,TangentGT,OverlapGT,ContainGT,EQ,..)Ords(compares))
+      - possibly just use hackage `range` library
+  - [x] import control
+  - [x] Rule.Void
+  - [ ] Texpr vs RawTexpr
   - [ ] newtypes for restricted strings
     - [ ] global rule names should begin with a capital letter
     - [ ] local rule names and captures should begin with a lowercase letter

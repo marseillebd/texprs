@@ -48,7 +48,6 @@ cleanSpace :: Texpr -> Texprs
 cleanSpace t@(Atom _ _) = [t]
 cleanSpace (Combo l name ts)
   | name `elem` ["space", "nl", "comment", "doc", "bird-foot"] = []
-  --- | "BirdFoot" `isPrefixOf` name = []
   | otherwise = [Combo l name (concatMap cleanSpace ts)]
 cleanSpace (Error _ _ _) = error "internal Peg error"
 
@@ -62,10 +61,10 @@ cleanKeywords (Combo l ctor ((cleanKeywords <$>) -> ts0)) = Combo l ctor (go cto
   go "def-rule" (name : Kw "=" : rest) = name : rest
   go "rule-parametric" (f : Kw "<" : (unsnoc -> Just (ts, Kw ">"))) = f : concatMap cleanComma ts
   go "rule-ctor" (name : Kw ":" : rest) = name:rest
-  go "rep-custom" (Kw "{" : (unsnoc -> Just (ts, Kw "}"))) = ts
   go "rep-custom" [Kw "{", lo, comma@(Kw ","), hi, Kw "}"] = [lo, comma, hi]
   go "rep-custom" [Kw "{", comma@(Kw ","), hi, Kw "}"] = [comma, hi]
   go "rep-custom" [Kw "{", lo, comma@(Kw ","), Kw "}"] = [lo, comma]
+  go "rep-custom" (Kw "{" : (unsnoc -> Just (ts, Kw "}"))) = ts
   go "rule-commit" [Kw "(", t1, Kw "->", t2, Kw ")"] = [t1, t2]
   go "rule-group" (Kw "(" : (unsnoc -> Just (ts, Kw ")"))) = ts
   go "rule-flat" (Kw "/" : (unsnoc -> Just (ts, Kw "/"))) = ts
@@ -174,7 +173,7 @@ parseRule (Combo l "rule-string" ts) = Str l $ concatMap parseStr ts
 parseRule (Combo l "rule-sat" ts) = Sat l $ parseSatClass <$> ts
 parseRule (Combo l "rule-sat.neg" ts) = SatNeg l $ parseSatClass <$> ts
 parseRule (Combo l "rule-end" []) = End l
--- parseRule (Combo l "rule-void" [Atom _ msg]) = Void l msg -- TODO
+parseRule (Combo l "rule-void" [Atom _ msg]) = Void l msg
 parseRule _ = error "internal Peg grammar error"
 
 parseSatClass :: Texpr -> SatClass

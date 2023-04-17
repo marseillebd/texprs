@@ -1,7 +1,19 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 
-module Data.Texpr where
+module Data.Texpr
+  ( Texpr(..)
+  , Texprs
+  , start
+  , end
+  , range
+  -- * To Unstructured
+  , flatten
+  , unparse
+  -- * Errors
+  , Reason(..)
+  , noReason
+  ) where
 
 import Data.CharSet (CharSet)
 import Data.List (intercalate)
@@ -59,6 +71,7 @@ data Reason = Reason
   , expectingChars :: CharSet
   , expectingKeywords :: Set String
   , expectingByName :: Map String Reason
+  , unexpected :: Set String
   }
 
 noReason :: Position -> Reason
@@ -68,6 +81,7 @@ noReason expectAt = Reason
   , expectingChars = CS.empty
   , expectingKeywords = Set.empty
   , expectingByName = Map.empty
+  , unexpected = Set.empty
   }
 
 instance Semigroup Reason where
@@ -79,6 +93,7 @@ instance Semigroup Reason where
       , expectingChars = a.expectingChars <> b.expectingChars
       , expectingKeywords = a.expectingKeywords <> b.expectingKeywords
       , expectingByName = Map.unionWith (<>) a.expectingByName b.expectingByName
+      , unexpected = a.unexpected <> b.unexpected
       }
     LT -> b
 
