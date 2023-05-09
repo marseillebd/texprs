@@ -11,20 +11,19 @@ module Text.Texpr.Monad
 import Prelude hiding (fail,sequence)
 
 import Data.CharSet (CharSet)
-import Data.List (isPrefixOf,stripPrefix)
+import Data.List (stripPrefix)
 import Data.Map (Map)
 import Data.Bifunctor (first,second)
 import Data.Maybe (maybeToList)
 import Data.Set (Set)
 import Data.Texpr (Texprs,Texpr(..),Reason(..),noReason,flatten,unparse)
 import Data.These (These(..))
-import Text.Location (Input(..),Source(..),Position(..),FwdRange,fwd)
+import Text.Location (Input(..),Position(..),FwdRange,fwd)
 import Text.Texpr.Tree (Rule(..))
 
 import qualified Data.CharSet as CS
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import qualified Data.Texpr as Texpr
 import qualified Text.Location as Loc
 
 runPeg :: Map String ([String], Rule) -> Rule -> Input -> Either ErrorReport (Texprs, Input)
@@ -57,7 +56,6 @@ parse = \case
   Call f gs -> call f gs
   Capture x g1 g2 -> capture x g1 g2
   Replay x -> replay x
-  Recover g1 g2 -> recover g1 g2
 
 satisfy :: CharSet -> Parse Texprs
 satisfy cs = Parse $ \env inp -> case inp.txt of
@@ -180,7 +178,6 @@ subst = \case
   Replay x -> lookupCapture x >>= \case
     Just txt -> pure $ Str txt
     Nothing -> errorWithoutStackTrace  $ "internal Texpr-Peg error: unbound capture " ++ show x
-  Recover g1 g2 -> Recover <$> subst g1 <*> subst g2
 
 capture :: String -> Rule -> Rule -> Parse Texprs
 capture x g1 g2 = do
@@ -193,31 +190,6 @@ replay :: String -> Parse Texprs
 replay x = lookupCapture x >>= \case
   Just str -> string str
   Nothing -> errorWithoutStackTrace  $ "internal Texpr-Peg error: unbound capture " ++ show x
-
-recover :: Rule -> Rule -> Parse Texprs
-recover g1 g2 = catch (parse g1) >>= \case
-  Right ts1 -> catch (parse g2) >>= \case
-    Right ts2 -> pure $ ts1 <> ts2
-    Left err -> do
-      (preErr, skip) <- performSkip err g2
-      catch (parse g2) >>= \case
-        Right ts2' -> pure $ ts1 <> err.prior <> [Error preErr err.reason skip] <> ts2'
-        Left _ -> rethrow err{prior = ts1 <> err.prior}
-  Left err -> do
-    (preErr, skip) <- performSkip err g2
-    catch (parse g2) >>= \case
-      Right ts2 -> pure $ err.prior <> [Error preErr err.reason skip] <> ts2
-      Left _ -> rethrow err
-
-performSkip :: ErrorReport -> Rule -> Parse (Source, Source)
-performSkip err g = Parse $ \env inp ->
-  let tsLoc = if null err.prior then inp.loc else Texpr.end (last err.prior)
-      remaining' = advanceTo (next g env) err.remaining
-   in This  ( ( Loc.slice inp (fwd tsLoc err.remaining.loc)
-              , Loc.slice err.remaining (fwd err.remaining.loc remaining'.loc)
-              )
-            , remaining'
-            )
 
 ------ The Monad ------
 
@@ -327,75 +299,3 @@ instance Semigroup Next where
     }
 instance Monoid Next where
   mempty = Next CS.empty Set.empty False
-
-nextChar :: Next -> CharSet
-nextChar Next{acceptEmpty=True} = errorWithoutStackTrace "internal Texpr-Peg error: nextChar should not be called when next accepts empty"
-nextChar Next{expectChars,expectStrs} =
-  mconcat $ expectChars : (nextStrStart <$> Set.toList expectStrs)
-  where
-  nextStrStart "" = errorWithoutStackTrace "internal Texpr-Peg error: ExpectStrings should not contain the empty string"
-  nextStrStart (c:_) = CS.singleton c
-
-nextStrings :: Next -> [String]
-nextStrings n = Set.toList n.expectStrs
-
--- return next expected inputs, and whether an empty string is acccepted
-next :: Rule -> Env -> Next
-next = \case
-  Sat cs -> const $ Next
-    { expectChars = cs
-    , expectStrs = Set.empty
-    , acceptEmpty = False
-    }
-  Many cs -> const $ Next
-    { expectChars = cs
-    , expectStrs = Set.empty
-    , acceptEmpty = True
-    }
-  Str "" -> const $ mempty{acceptEmpty = True}
-  Str str -> const $ Next
-    { expectChars = CS.empty
-    , expectStrs = Set.singleton str
-    , acceptEmpty = False
-    }
-  End -> const $ mempty
-  Void _ -> const $ mempty
-  Alt2 g1 g2 -> \env -> next g1 env <> next g2 env
-  Empty -> const $ mempty{acceptEmpty = True}
-  Seq2 g1 g2 -> \env ->
-    let n1 = next g1 env
-     in if n1.acceptEmpty then n1 <> next g2 env else n1
-  Star g -> \env -> (next g env){acceptEmpty = True}
-  Ctor _ g -> next g
-  Flat g -> next g
-  AsUnit g -> next g
-  Expect _ g -> next g
-  -- Fail _ -> const mempty
-  Call name args -> \env -> case Map.lookup name env.local of
-    Just g -> next g env
-    Nothing -> case Map.lookup name env.global of
-      Just (params, g) ->
-        let locals' = Map.fromList (zip params args)
-         in next g env{local=locals',captures=Map.empty}
-      Nothing -> mempty
-  Capture _ g1 g2 -> next (Seq2 g1 g2)
-  Replay name -> \env -> case Map.lookup name env.captures of
-    Just txt -> next (Str txt) env
-    Nothing -> mempty
-  Recover g1 g2 -> next (Seq2 g1 g2)
-
-advanceTo :: Next -> Input -> Input
-advanceTo n inp0
-  | n.acceptEmpty = inp0
-  | otherwise = loop inp0
-  where
-  loop :: Input -> Input
-  loop inp = case break (`CS.elem` nextChar n) inp.txt of
-    (skip, "") -> inp' skip ""
-    (skip, txt'@(c:rest))
-      | c `CS.elem` n.expectChars -> inp' skip txt'
-      | (`isPrefixOf` txt') `any` (nextStrings n) -> inp' skip txt'
-      | otherwise -> loop (inp' (skip <> [c]) rest)
-    where
-    inp' :: String -> String -> Input
-    inp' skip rest = Input (inp.loc `Loc.advance` skip) rest

@@ -29,6 +29,7 @@ type RuleDef = (FwdRange, (FwdRange, String, [String]), Rule)
 data Rule
   = Alt FwdRange [Rule]
   | Seq FwdRange [Rule]
+  | Cap FwdRange String Rule Rule
   | Rep FwdRange Rule (Int, Maybe Int)
   | Sat FwdRange [SatClass]
   | SatNeg FwdRange [SatClass]

@@ -46,6 +46,10 @@
 - [ ] parser for a language defining PEGs
   - [x] should be literate by default
   - [x] define character sets
+  - [ ] parse rules
+    - [ ] Not
+    - [x] Capture
+    - [ ] Expect
   - [ ] define rules
     - [x] define string, char
     - [x] define Sat
@@ -56,8 +60,7 @@
     - [x] fix Void so it always fails; …or elimiate Void altogether …or require an error message for void
     - [x] define grouping, flatten
     - [ ] define Expect
-    - [ ] define Capture
-    - [ ] define Recover
+    - [x] define Capture
 
 ## Stage 2
 

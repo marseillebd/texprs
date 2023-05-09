@@ -19,7 +19,7 @@ import Data.CharSet (CharSet)
 import Data.List (intercalate)
 import Data.Map (Map)
 import Data.Set (Set)
-import Text.Location (Source(..),Position,FwdRange,fwd)
+import Text.Location (Position,FwdRange,fwd)
 
 import qualified Data.CharSet as CS
 import qualified Data.Map as Map
@@ -34,16 +34,13 @@ type Texprs = [Texpr]
 data Texpr
   = Atom {-# UNPACK #-} !FwdRange String
   | Combo FwdRange String Texprs
-  | Error Source Reason Source -- text before error, error that was caught, and skipped input
 
 start :: Texpr -> Position
 start (Atom r _) = r.anchor
 start (Combo r _ _) = r.anchor
-start (Error preErr _ _) = preErr.loc.anchor
 end :: Texpr -> Position
 end (Atom r _) = r.position
 end (Combo r _ _) = r.position
-end (Error _ _ skip) = skip.loc.position
 
 range :: Texpr -> FwdRange
 range t = fwd (start t) (end t)
@@ -56,12 +53,10 @@ flatten ts0 = Just . Atom p . goList $ ts0
   goList ts = concat $ goTree <$> ts
   goTree (Atom _ str) = str
   goTree (Combo _ _ ts) = goList ts
-  goTree (Error _ _ _) = []
 
 unparse :: Texpr -> String
 unparse (Atom _ str) = str
 unparse (Combo _ _ ts) = concat (unparse <$> ts)
-unparse (Error preErr _ skip) = preErr.txt <> skip.txt
 
 ------------------ Errors ------------------
 
@@ -102,13 +97,6 @@ instance Semigroup Reason where
 instance Show Texpr where
   show (Atom _ str) = show str
   show (Combo _ name children) = concat ["(", name, concatMap (' ':) $ show <$> children, ")"]
-  show (Error preErr err skip) = concat
-    [ "!{"
-    , if null preErr.txt then "" else show preErr.txt <> " "
-    , "(" <> show err <> ")" -- TODO use a more s-expr-oriented renderer
-    , if null skip.txt then "" else " " <> show skip.txt
-    , "}"
-    ]
 
 instance Show Reason where
   show r = concat

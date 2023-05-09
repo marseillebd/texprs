@@ -18,7 +18,7 @@ import qualified Text.Texpr.Bootstrap as Tbnf
 import qualified Text.Texpr.Compile as C
 
 main :: IO ()
-main = main1
+main = main2
 
 ------------------------------------
 
@@ -72,13 +72,6 @@ main1 = do
   print $ runPeg Map.empty charSetGrammar (startInput "[\\U123ABC]")
   print $ runPeg Map.empty g4 (startInput "aaabaaab")
   print $ runPeg Map.empty g4 (startInput "aaabaab")
-  print $ runPeg Map.empty g5 (startInput "hello   world")
-  print $ runPeg Map.empty g5 (startInput "he110   world")
-  print $ runPeg Map.empty g5 (startInput "he110   ")
-  print $ runPeg Map.empty g5 (startInput "   world")
-  print $ runPeg Map.empty g5 (startInput "helloworld")
-  print $ runPeg Map.empty g5 (startInput "he110world")
-  print $ runPeg Map.empty g5 (startInput "hello   world ")
   print $ uncurry runPeg g6 (startInput "(1)(23)(456)")
   print $ runPeg Map.empty g7 (startInput "123")
   print $ runPeg Map.empty g7 (startInput "12")
@@ -134,14 +127,6 @@ charSetGrammar = Ctor "Set" $ Seq
 g4 :: Rule
 g4 = Capture "foo" (Seq [Star (Str "a"), Str "b"]) $ Replay "foo"
 
-g5 :: Rule
-g5 = Seq [ Recover ident space, Recover ident eof ]
-  where
-  ident = Ctor "Ident" $ Flat $ plus $ Sat $ CS.contiguous 'a' 'z'
-  space = Ctor "Ws" $ Flat $ plus $ Sat $ CS.oneOf " \t"
-  plus g = Seq [g, Star g]
-  eof = Expect "eof" $ Alt []
-
 g6 :: (Map String ([String], Rule), Rule)
 g6 =
   ( Map.fromList
@@ -152,11 +137,11 @@ g6 =
   , line
   )
   where
-  line = Star (Call "parens" [Call "num" []]) `Recover` Void "anything"
+  line = Star (Call "parens" [Call "num" []]) `Seq2` Void "anything"
   parens = Ctor "Number" $
               Str "("
        `Seq2` Call "inner" []
-    `Recover` Str ")"
+       `Seq2` Str ")"
   num = Flat $ Sat digit `Seq2` Many digit
   digit = CS.contiguous '0' '9'
 

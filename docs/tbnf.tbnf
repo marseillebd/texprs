@@ -193,12 +193,17 @@ This includes the usual star, plus, question mark, and bounded repetition (curly
 >   | rep-custom: enclose.braces<num.nat>
 
 Our next operator is sequencing, which is marked simply by separating grammars with whitespace.
-Then, we have our constructor rule, which we have already seen.
+It is also possible to capture input, then replay it in subsequent input.
+Note that unlike regex, replays are valid only within a given scope, rather than for the remainder of the parse.
+Also, captures are always given names, never referred to by numbers.
 
 > Rule.Seq<f>
->   = rule-seq: Rule.Factor<f> (lws+ Rule.Factor<f>)+
+>   = rule-capture: '@' Name.rule lws* '=' lws+ Rule.Factor<f> lws+ Rule.Seq<f>
+>   | rule-seq: Rule.Factor<f> (lws+ Rule.Factor<f>)+
 >   | Rule.Factor<f>
->
+
+Then, we have our constructor rule, which we have already seen in use.
+
 > Rule.Term<f>
 >   = rule-ctor: Name.ctor colon Rule.Seq<f>
 >   | Rule.Seq<f>

@@ -16,12 +16,14 @@ import Data.CharSet (CharSet)
 import Data.Graph (SCC(..),stronglyConnComp)
 import Data.List (find)
 import Data.Map (Map)
+import Data.Set (Set)
 import Text.Location (FwdRange)
 import Text.Texpr.Define (Peg(..),Rule(..),SatClass(..),CharClass(..))
 import Text.Texpr.Define (StartDef,RuleDef,ClassDef)
 
 import qualified Data.CharSet as CS
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import qualified Text.Texpr.Tree as Tree
 
 data Error
@@ -31,6 +33,7 @@ data Error
   | EmptyRange FwdRange Char Char
   | EmptyRepetition FwdRange Int Int
   | NoStartRule
+  | ReplayTakesNoArguments FwdRange String
   | StartRuleCannotBeParametric FwdRange String [String]
   | UndefinedClass FwdRange String
   | UndefinedRule FwdRange String
@@ -68,6 +71,7 @@ compileRules clss gs = do
       st0 = RuleSt
         { classes = clss
         , arities
+        , captures = Set.empty
         , isUnderFlat = False
         }
       go :: RuleDef -> Either [Error] (Map String ([String], Tree.Rule))
@@ -84,6 +88,7 @@ compileRules clss gs = do
 data CompileRuleState = RuleSt
   { classes :: Map String CharSet
   , arities :: Map String Int
+  , captures :: Set String
   , isUnderFlat :: Bool
   }
 
@@ -91,7 +96,9 @@ compileRule :: CompileRuleState -> Rule -> Either [Error] Tree.Rule
 compileRule st = \case
   Alt _ gs -> Tree.Alt <$> compileRule st `mapM` gs
   Seq _ gs -> Tree.Seq <$> compileRule st `mapM` gs
-  -- Rep FwdRange (Rule, Maybe Rule) (Int, Maybe Int)
+  Cap _ name capture scope ->
+    let st' = st{captures = Set.insert name st.captures}
+     in Tree.Capture name <$> compileRule st capture <*> compileRule st' scope
   Rep loc _ (lo, Just hi) | lo > hi -> Left [EmptyRepetition loc lo hi]
   Rep _ g (lo, hi) -> do
     g' <- compileRule st g
@@ -108,11 +115,15 @@ compileRule st = \case
   End _ -> pure Tree.End
   Void _ msg -> pure $ Tree.Void msg
   Flat _ g -> Tree.Flat <$> compileRule st g
-  Call loc f args -> case Map.lookup f st.arities of
+  Call loc name args -> case Map.lookup name st.arities of
     Just ar
-      | length args == ar -> Tree.Call f <$> compileRule st `mapM` args
-      | otherwise -> Left [WrongNumberOfArguments loc ar f (length args)]
-    Nothing -> Left [UndefinedRule loc f]
+      | length args == ar -> Tree.Call name <$> compileRule st `mapM` args
+      | otherwise -> Left [WrongNumberOfArguments loc ar name (length args)]
+    Nothing -> case name `Set.member` st.captures of
+      True
+        | null args -> pure $ Tree.Replay name
+        | otherwise -> Left [ReplayTakesNoArguments loc name]
+      False -> Left [UndefinedRule loc name]
   Ctor _ name g -> Tree.Ctor name <$> compileRule st g
 
 compileRep :: Tree.Rule -> Int -> Maybe Int -> Tree.Rule
