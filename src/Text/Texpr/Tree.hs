@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
 
@@ -5,9 +6,26 @@ module Text.Texpr.Tree
   ( Rule(..)
   , pattern Alt
   , pattern Seq
+  -- * Special Names
+  , RuleName
+  , ruleNameFromString
+  , ruleNameToString
+  , ParamName
+  , paramNameFromString
+  , paramNameToString
+  , ruleNameFromParamName
+  , paramNameFromRuleName
   ) where
 
+import Control.Monad (forM_,when)
+import Data.Char (isAscii,isAlphaNum,isDigit)
 import Data.CharSet (CharSet)
+import Data.List (isPrefixOf,intercalate)
+import Data.String (IsString(..))
+import Data.Texpr (CtorName)
+import Data.Text (Text)
+
+import qualified Data.Text as T
 
 -- TODO factor out common prefixes
   -- that is, when there's an alternation with two branches that share a common grammar prefix, I want to do the parse once and re-use the results
@@ -30,14 +48,14 @@ data Rule
   | Empty
   | Seq2 Rule Rule
   | Star Rule
-  | Ctor String Rule
+  | Ctor CtorName Rule
   | Flat Rule
   | AsUnit Rule -- ^ if the rule fails, fail as soon as the rule started (i.e. like an `Expect`, but no new error message)
   | Expect String Rule
-  | Call String [Rule] -- lookup a binding in the current environment and match it
-  | Capture String Rule Rule -- i.e. capture string as the text matching Rule₁ and use that binding in Rule₂
-  | Replay String -- rather than calling, so we don't have to save an environment
-  | TexprCtor String -- ^ match a texpr which is a combo with the given tag
+  | Call RuleName [Rule] -- lookup a binding in the current environment and match it
+  | Capture ParamName Rule Rule -- i.e. capture string as the text matching Rule₁ and use that binding in Rule₂
+  | Replay ParamName -- rather than calling, so we don't have to save an environment
+  | TexprCtor CtorName -- ^ match a texpr which is a combo with the given tag
   deriving (Show,Eq)
 
 pattern Alt :: [Rule] -> Rule
@@ -57,3 +75,66 @@ pattern Seq ts <- (fromSeq -> ts@(_:_:_))
 fromSeq :: Rule -> [Rule]
 fromSeq (Seq2 g1 g2) = fromSeq g1 <> fromSeq g2
 fromSeq g = [g]
+
+------------------ Special Names ------------------
+
+newtype ParamName = ParamName { unParamName :: Text }
+  deriving (Eq, Ord)
+instance Show ParamName where
+  show = show . paramNameToString
+instance IsString ParamName where
+  fromString str = case paramNameFromString str of
+    Nothing -> error $ "invalid texpr PEG parameter name: " ++ show str
+    Just cname -> cname
+
+paramNameFromString :: String -> Maybe ParamName
+paramNameFromString str = do
+  when (null str) Nothing
+  when (isDigit $ head str) Nothing
+  when (not $ all isIdChar str) Nothing
+  pure $ ParamName $ T.pack str
+
+paramNameToString :: ParamName -> String
+paramNameToString = T.unpack . unParamName
+
+newtype RuleName = RuleName { unRuleName :: Text }
+  deriving (Eq, Ord)
+instance Show RuleName where
+  show = show . ruleNameToString
+instance IsString RuleName where
+  fromString str = case ruleNameFromString str of
+    Nothing -> error $ "invalid texpr PEG rule name: " ++ show str
+    Just cname -> cname
+
+ruleNameFromString :: String -> Maybe RuleName
+ruleNameFromString str = do
+  when ("." `isPrefixOf` str) Nothing
+  parts <- splitDots str
+  forM_ parts $ \part -> do
+    when (isDigit $ head part) Nothing
+    when (not $ all isIdChar part) Nothing
+  pure $ RuleName $ T.pack $ intercalate "." parts
+
+ruleNameToString :: RuleName -> String
+ruleNameToString = T.unpack . unRuleName
+
+isIdChar :: Char -> Bool
+isIdChar c = isAscii c && isAlphaNum c || c == '_'
+
+splitDots :: String -> Maybe [String]
+splitDots str = case break (=='.') str of
+  ([], _:_) -> Nothing
+  (_, '.':[]) -> Nothing
+  ([], []) -> Just []
+  (part, []) -> Just [part]
+  (part, '.':str') -> (part :) <$> splitDots str'
+  (_, _:_) -> Nothing
+
+ruleNameFromParamName :: ParamName -> RuleName
+ruleNameFromParamName = RuleName . unParamName
+
+paramNameFromRuleName :: RuleName -> Maybe ParamName
+paramNameFromRuleName (RuleName str) =
+  if "." `T.isInfixOf` str
+    then Nothing
+    else Just (ParamName str)

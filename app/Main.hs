@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
 
@@ -10,7 +11,7 @@ import Data.Map (Map)
 import System.Exit (exitFailure)
 import Text.Location (startInput)
 import Text.Texpr.Monad.String (runPeg,ErrorReport(..))
-import Text.Texpr.Tree (Rule(..),pattern Alt,pattern Seq)
+import Text.Texpr.Tree (Rule(..),pattern Alt,pattern Seq,RuleName,ParamName)
 
 import qualified Data.CharSet as CS
 import qualified Data.Map as Map
@@ -49,7 +50,7 @@ main2 = do
       pPrint e.reason
       exitFailure
   if peg1 == peg2
-    then print "^.^"
+    then print ("^.^" :: String)
     else exitFailure
 
 ------------------------------------
@@ -127,7 +128,7 @@ charSetGrammar = Ctor "Set" $ Seq
 g4 :: Rule
 g4 = Capture "foo" (Seq [Star (Str "a"), Str "b"]) $ Replay "foo"
 
-g6 :: (Map String ([String], Rule), Rule)
+g6 :: (Map RuleName ([ParamName], Rule), Rule)
 g6 =
   ( Map.fromList
     [ ("S", ([], line))

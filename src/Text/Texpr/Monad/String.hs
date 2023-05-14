@@ -18,14 +18,14 @@ import Data.Map (Map)
 import Data.Texpr (Texprs)
 import Text.Location (Input(..))
 import Text.Texpr.Monad.Generic (Stream(..),ErrorReport(..),Reason(..))
-import Text.Texpr.Tree (Rule)
+import Text.Texpr.Tree (Rule,RuleName,ParamName)
 
 import qualified Data.CharSet as CS
 import qualified Text.Location as Loc
 import qualified Text.Texpr.Monad.Generic as Monad
 
 runPeg ::
-     Map String ([String], Rule) -- ^ global rule definitions
+     Map RuleName ([ParamName], Rule) -- ^ global rule definitions
   -> Rule -- ^ start rule
   -> Input -- ^ input
   -> Either (ErrorReport Input) (Texprs, Input) -- ^ result with remaining input

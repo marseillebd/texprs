@@ -18,16 +18,16 @@ import Text.Texpr.Monad
 import Data.CharSet (CharSet)
 import Data.Map (Map)
 import Data.Maybe (maybeToList)
-import Data.Texpr (Texprs,Texpr(..),flatten,unparse)
+import Data.Texpr (Texprs,Texpr(..),flatten,unparse,CtorName)
 import Data.These (These(..))
 import Text.Location (fwd)
-import Text.Texpr.Tree (Rule(..))
+import Text.Texpr.Tree (Rule(..),RuleName,ParamName)
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
 runPeg :: (Stream s)
-  => Map String ([String], Rule) -- ^ global rule definitions
+  => Map RuleName ([ParamName], Rule) -- ^ global rule definitions
   -> Rule -- ^ start rule
   -> s -- ^ input
   -> Either (ErrorReport s) (Texprs, s) -- ^ result with remaining input
@@ -117,7 +117,7 @@ star g = do
         then pure [] -- to prevent infinite loops when the repeated grammar accepts empty
         else (ts <>) <$> mapErr (star g) (\err -> err{prior = ts <> err.prior})
 
-ctor :: (Stream s) => String -> Rule -> Parse s Texprs
+ctor :: (Stream s) => CtorName -> Rule -> Parse s Texprs
 ctor name g = do
   (r, ts) <- withRange $ parse g
   pure [Combo r name ts]
@@ -140,7 +140,7 @@ expect desc g = do
                 {expectingByName = Map.singleton desc err.reason}
     }
 
-call :: (Stream s) => String -> [Rule] -> Parse s Texprs
+call :: (Stream s) => RuleName -> [Rule] -> Parse s Texprs
 call f args = lookupLocal f >>= \case
   Just g -> withCall Map.empty $ parse g
   Nothing -> lookupGlobal f >>= \case
@@ -152,19 +152,19 @@ call f args = lookupLocal f >>= \case
       | otherwise -> errorWithoutStackTrace $ "internal Texpr-Peg error: wrong number of arguments " ++ show f ++ " " ++ show (length args)
     Nothing -> errorWithoutStackTrace $ "internal Texpr-Peg error: unbound grammar " ++ show f
 
-capture :: (Stream s) => String -> Rule -> Rule -> Parse s Texprs
+capture :: (Stream s) => ParamName -> Rule -> Rule -> Parse s Texprs
 capture x g1 g2 = do
   ts1 <- parse g1
   let action' = withCapture x (unparse `concatMap` ts1) (parse g2)
   ts2 <- action' `mapErr` \err -> err{prior = ts1 <> err.prior}
   pure $ ts1 <> ts2
 
-replay :: (Stream s) => String -> Parse s Texprs
+replay :: (Stream s) => ParamName -> Parse s Texprs
 replay x = lookupCapture x >>= \case
   Just str -> string str
   Nothing -> errorWithoutStackTrace  $ "internal Texpr-Peg error: unbound capture " ++ show x
 
-texprCtor :: (Stream s) => String -> Parse s Texprs
+texprCtor :: (Stream s) => CtorName -> Parse s Texprs
 texprCtor name = Parse $ \env inp -> case takeTexpr inp of
   Just (t@(Combo _ name' _), inp') | name == name' -> This ([t], inp')
   _ ->

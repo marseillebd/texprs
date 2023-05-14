@@ -13,7 +13,9 @@ module Text.Texpr.Define
   , CharClass(..)
   ) where
 
+import Data.Texpr (CtorName)
 import Text.Location (FwdRange)
+import Text.Texpr.Tree (RuleName,ParamName)
 
 data Peg = Peg
   { start :: StartDef
@@ -22,14 +24,14 @@ data Peg = Peg
   }
   deriving (Show)
 
-type StartDef = Maybe (FwdRange, String)
+type StartDef = Maybe (FwdRange, RuleName)
 
-type RuleDef = (FwdRange, (FwdRange, String, [String]), Rule)
+type RuleDef = (FwdRange, (FwdRange, RuleName, [ParamName]), Rule)
 
 data Rule
   = Alt FwdRange [Rule]
   | Seq FwdRange [Rule]
-  | Cap FwdRange String Rule Rule
+  | Cap FwdRange ParamName Rule Rule
   | Rep FwdRange Rule (Int, Maybe Int)
   | Sat FwdRange [SatClass]
   | SatNeg FwdRange [SatClass]
@@ -38,21 +40,21 @@ data Rule
   | End FwdRange
   | Void FwdRange String
   | Flat FwdRange Rule
-  | Call FwdRange String [Rule]
-  | Ctor FwdRange String Rule
+  | Call FwdRange RuleName [Rule]
+  | Ctor FwdRange CtorName Rule
   deriving (Show)
 
 data SatClass
-  = SatVar FwdRange String
+  = SatVar FwdRange RuleName
   | SatRange FwdRange Char Char
   | SatChar FwdRange Char
   | SatSet FwdRange [Char]
   deriving (Show)
 
-type ClassDef = (FwdRange, (FwdRange, String), CharClass)
+type ClassDef = (FwdRange, (FwdRange, RuleName), CharClass)
 
 data CharClass
-  = ClassVar FwdRange String
+  = ClassVar FwdRange RuleName
   | ClassRange FwdRange Char Char
   | ClassChar FwdRange Char
   | ClassSet FwdRange [Char]

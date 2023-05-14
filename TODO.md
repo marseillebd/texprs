@@ -4,9 +4,7 @@
 
 - FIXES:
 - CLEANUP:
-  - [ ] newtypes for restricted strings
-    - [ ] global rule names should begin with a capital letter
-    - [ ] local rule names and captures should begin with a lowercase letter
+  - [x] newtypes for restricted strings
   - [ ] hackage docs
   - [?] module Data.Range (ORDS(DisjointGT,TangentGT,OverlapGT,ContainGT,EQ,..)Ords(compares))
       - possibly just use hackage `range` library
@@ -43,6 +41,7 @@
 
 ## Stage 2
 
+- [ ] render grammars to html
 - [ ] standard for serializing texpr streams
 - [ ] application that parses into texprs
 - [ ] texpr rewriter language

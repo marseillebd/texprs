@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -20,6 +21,7 @@ import Data.Set (Set)
 import Text.Location (FwdRange)
 import Text.Texpr.Define (Peg(..),Rule(..),SatClass(..),CharClass(..))
 import Text.Texpr.Define (StartDef,RuleDef,ClassDef)
+import Text.Texpr.Tree (RuleName,ParamName,paramNameFromRuleName,ruleNameFromParamName)
 
 import qualified Data.CharSet as CS
 import qualified Data.Map as Map
@@ -27,20 +29,20 @@ import qualified Data.Set as Set
 import qualified Text.Texpr.Tree as Tree
 
 data Error
-  = CircularClassDefinitions [(FwdRange, String)]
-  | DuplicateClassDefinitions [FwdRange] String
-  | DuplicateRuleDefinitions [FwdRange] String
+  = CircularClassDefinitions [(FwdRange, RuleName)]
+  | DuplicateClassDefinitions [FwdRange] RuleName
+  | DuplicateRuleDefinitions [FwdRange] RuleName
   | EmptyRange FwdRange Char Char
   | EmptyRepetition FwdRange Int Int
   | NoStartRule
-  | ReplayTakesNoArguments FwdRange String
-  | StartRuleCannotBeParametric FwdRange String [String]
-  | UndefinedClass FwdRange String
-  | UndefinedRule FwdRange String
-  | WrongNumberOfArguments FwdRange Int String Int
+  | ReplayTakesNoArguments FwdRange ParamName
+  | StartRuleCannotBeParametric FwdRange RuleName [ParamName]
+  | UndefinedClass FwdRange RuleName
+  | UndefinedRule FwdRange RuleName
+  | WrongNumberOfArguments FwdRange Int RuleName Int
   deriving (Show)
 
-compile :: Peg -> Either [Error] (Map String ([String], Tree.Rule), Tree.Rule)
+compile :: Peg -> Either [Error] (Map RuleName ([ParamName], Tree.Rule), Tree.Rule)
 compile peg = do
   clss <- compileClasses peg.classes
   rs <- compileRules clss peg.rules
@@ -64,7 +66,10 @@ compileStart (Just (r, x)) gs = case find (\(_, (_, y, _), _) -> x == y) gs of
 
 ------------------ Rule Definitions ------------------
 
-compileRules :: Map String CharSet -> [RuleDef] -> Either [Error] (Map String ([String], Tree.Rule))
+compileRules ::
+     Map RuleName CharSet
+  -> [RuleDef]
+  -> Either [Error] (Map RuleName ([ParamName], Tree.Rule))
 compileRules clss gs = do
   () <- checkDuplicateNames getName DuplicateRuleDefinitions gs
   let arities = Map.fromList $ getArityDef <$> gs
@@ -74,9 +79,9 @@ compileRules clss gs = do
         , captures = Set.empty
         , isUnderFlat = False
         }
-      go :: RuleDef -> Either [Error] (Map String ([String], Tree.Rule))
+      go :: RuleDef -> Either [Error] (Map RuleName ([ParamName], Tree.Rule))
       go (_, (_, x, params), g) = do
-        let locals = Map.fromList $ (,0) <$> params
+        let locals = Map.fromList $ (,0) . ruleNameFromParamName <$> params
             st = st0{arities = locals `Map.union` st0.arities}
         g' <- compileRule st g
         pure $ Map.singleton x (params, g')
@@ -86,9 +91,9 @@ compileRules clss gs = do
   getArityDef (_, (_, x, params), _) = (x, length params)
 
 data CompileRuleState = RuleSt
-  { classes :: Map String CharSet
-  , arities :: Map String Int
-  , captures :: Set String
+  { classes :: Map RuleName CharSet
+  , arities :: Map RuleName Int
+  , captures :: Set ParamName
   , isUnderFlat :: Bool
   }
 
@@ -119,11 +124,13 @@ compileRule st = \case
     Just ar
       | length args == ar -> Tree.Call name <$> compileRule st `mapM` args
       | otherwise -> Left [WrongNumberOfArguments loc ar name (length args)]
-    Nothing -> case name `Set.member` st.captures of
-      True
-        | null args -> pure $ Tree.Replay name
-        | otherwise -> Left [ReplayTakesNoArguments loc name]
-      False -> Left [UndefinedRule loc name]
+    Nothing -> case paramNameFromRuleName name of
+      Just name' -> case name' `Set.member` st.captures of
+        True
+          | null args -> pure $ Tree.Replay name'
+          | otherwise -> Left [ReplayTakesNoArguments loc name']
+        False -> Left [UndefinedRule loc name]
+      Nothing -> Left [UndefinedRule loc name]
   Ctor _ name g -> Tree.Ctor name <$> compileRule st g
 
 compileRep :: Tree.Rule -> Int -> Maybe Int -> Tree.Rule
@@ -138,7 +145,7 @@ compileRep !g !n0 (Just !m0) = loop n0 m0
   loop 0 !m = (Tree.Seq [ g, loop 0 (m - 1) ]) `Tree.Alt2` Tree.Empty
   loop !n !m = Tree.Seq [ g, loop (n - 1) (m - 1) ]
 
-compileSatisfy :: Map String CharSet -> SatClass -> Either [Error] CharSet
+compileSatisfy :: Map RuleName CharSet -> SatClass -> Either [Error] CharSet
 compileSatisfy clss = \case
   SatVar loc x -> case Map.lookup x clss of
     Just cls -> pure cls
@@ -151,7 +158,7 @@ compileSatisfy clss = \case
 
 ------------------ Character Classes ------------------
 
-compileClasses :: [ClassDef] -> Either [Error] (Map String CharSet)
+compileClasses :: [ClassDef] -> Either [Error] (Map RuleName CharSet)
 compileClasses clss = do
   () <- checkDuplicateNames getName DuplicateClassDefinitions clss
   let go defd = \case
@@ -160,11 +167,11 @@ compileClasses clss = do
   foldM go Map.empty (stronglyConnComp $ toVertex <$> clss)
   where
   getName (_, it, _) = it
-  toVertex :: ClassDef -> (ClassDef, String, [String])
+  toVertex :: ClassDef -> (ClassDef, RuleName, [RuleName])
   toVertex def@(_, (_, name), body) = (def, name, fv body)
-  toError :: ClassDef -> (FwdRange, String)
+  toError :: ClassDef -> (FwdRange, RuleName)
   toError (_, nameLoc, _) = nameLoc
-  fv :: CharClass -> [String]
+  fv :: CharClass -> [RuleName]
   fv (ClassVar _ x) = [x]
   fv (ClassRange _ _ _) = []
   fv (ClassChar _ _) = []
@@ -172,7 +179,7 @@ compileClasses clss = do
   fv (ClassUnion a b) = fv a <> fv b
   fv (ClassMinus a b) = fv a <> fv b
 
-compileClass :: Map String CharSet -> ClassDef -> Either [Error] (Map String CharSet)
+compileClass :: Map RuleName CharSet -> ClassDef -> Either [Error] (Map RuleName CharSet)
 compileClass defd (_, (_, name), body) = Map.singleton name <$> go body
   where
   go :: CharClass -> Either [Error] CharSet
@@ -190,8 +197,8 @@ compileClass defd (_, (_, name), body) = Map.singleton name <$> go body
 ------------------ Helpers ------------------
 
 checkDuplicateNames ::
-     (a -> (FwdRange, String)) -- ^ map a definition to its (located) name
-  -> ([FwdRange] -> String -> Error) -- ^ map a name and its multiple definition locations to an error
+     (a -> (FwdRange, RuleName)) -- ^ map a definition to its (located) name
+  -> ([FwdRange] -> RuleName -> Error) -- ^ map a name and its multiple definition locations to an error
   -> [a]
   -> Either [Error] ()
 checkDuplicateNames getName toError xs = case detect of

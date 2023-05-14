@@ -26,10 +26,10 @@ import Data.CharSet (CharSet)
 import Data.List (intercalate)
 import Data.Map (Map)
 import Data.Set (Set)
-import Data.Texpr (Texprs,Texpr)
+import Data.Texpr (Texprs,Texpr,CtorName)
 import Data.These (These(..))
 import Text.Location (Position,FwdRange,fwd)
-import Text.Texpr.Tree (Rule(..))
+import Text.Texpr.Tree (Rule(..),RuleName,ParamName,paramNameFromRuleName)
 
 import qualified Data.CharSet as CS
 import qualified Data.Map as Map
@@ -40,9 +40,9 @@ import qualified Data.Set as Set
 newtype Parse s a = Parse { unParse :: Env -> s -> These (a, s) (ErrorReport s) }
 
 data Env = Env
-  { global :: Map String ([String], Rule)
-  , local :: Map String Rule
-  , captures :: Map String String
+  { global :: Map RuleName ([ParamName], Rule)
+  , local :: Map ParamName Rule
+  , captures :: Map ParamName String
   }
   deriving (Show)
 
@@ -95,21 +95,23 @@ throw :: (Stream s) => Reason -> Parse s a
 throw reason = Parse $ \_ remaining -> That $
   Err { prior = [], reason, remaining }
 
-withCall :: (Stream s) => Map String Rule -> Parse s a -> Parse s a
+withCall :: (Stream s) => Map ParamName Rule -> Parse s a -> Parse s a
 withCall local action = Parse $ \env inp -> unParse action env{local,captures=Map.empty} inp
 
-withCapture :: (Stream s) => String -> String -> Parse s a -> Parse s a
+withCapture :: (Stream s) => ParamName -> String -> Parse s a -> Parse s a
 withCapture x v action = Parse $ \env inp ->
   let env' = env{captures = Map.insert x v env.captures}
    in unParse action env' inp
 
-lookupGlobal :: (Stream s) => String -> Parse s (Maybe ([String], Rule))
+lookupGlobal :: (Stream s) => RuleName -> Parse s (Maybe ([ParamName], Rule))
 lookupGlobal x = Parse $ \env inp -> This (Map.lookup x env.global, inp)
 
-lookupLocal :: (Stream s) => String -> Parse s (Maybe Rule)
-lookupLocal x = Parse $ \env inp -> This (Map.lookup x env.local, inp)
+lookupLocal :: (Stream s) => RuleName -> Parse s (Maybe Rule)
+lookupLocal x0 = case paramNameFromRuleName x0 of
+  Nothing -> pure Nothing
+  Just x -> Parse $ \env inp -> This (Map.lookup x env.local, inp)
 
-lookupCapture :: (Stream s) => String -> Parse s (Maybe String)
+lookupCapture :: (Stream s) => ParamName -> Parse s (Maybe String)
 lookupCapture x = Parse $ \env inp -> This (Map.lookup x env.captures, inp)
 
 
@@ -143,7 +145,7 @@ data Reason = Reason
   , expectingEndOfInput :: Bool
   , expectingChars :: CharSet
   , expectingKeywords :: Set String
-  , expectingCtors :: Set String
+  , expectingCtors :: Set CtorName
   , expectingByName :: Map String Reason
   , unexpected :: Set String
   }

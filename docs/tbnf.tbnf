@@ -290,14 +290,16 @@ Names appear in a variety of places in the grammar.
 We've collected them here so that one can see at a glance what is allowed.
 Generally, they are alphanumeric strings separated with dots and/or dashes.
 
-> Name.rule = / sep.dot<[:ascii.alpha:] [:ascii.alpha-num:]*> /
+> Name.rule = / sep.dot<Name.part> /
 >
-> Name.param = / [:ascii.alpha:] [:ascii.alpha-num:]* /
+> Name.param = Name.part
+>
+> Name.class = Name.rule
 >
 > # TODO: should this really by separated by dash? seems incongruent
-> Name.ctor = / sep.dash<[:ascii.alpha:] [:ascii.alpha-num:]*> /
+> Name.ctor = / sep.dash<Name.part> /
 >
-> Name.class = / sep.dot<[:ascii.alpha:] [:ascii.alpha-num:'\-']*> /
+> Name.part = / [:ascii.alpha: '_'] [:ascii.alpha_num: '_']* /
 
 ### Generic Character Classes
 
@@ -312,7 +314,7 @@ Once grammar libraries/import is implemented, these will be moved to a library.
 > :ascii.alpha: = :ascii.alpha.lo: | :ascii.alpha.hi:
 > :ascii.alpha.lo: = 'a'..'z'
 > :ascii.alpha.hi: = 'A'..'Z'
-> :ascii.alpha-num: = :ascii.alpha: | :digit:
+> :ascii.alpha_num: = :ascii.alpha: | :digit:
 
 Ah yes, and we also needed decimal natural numbers, which I may as well throw in here.
 

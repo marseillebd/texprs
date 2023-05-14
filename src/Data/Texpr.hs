@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Data.Texpr
   ( Texpr(..)
@@ -10,9 +11,20 @@ module Data.Texpr
   -- * To Unstructured
   , flatten
   , unparse
+  -- * Dedicated String Types
+  , CtorName
+  , ctorNameFromString
+  , ctorNameToString
   ) where
 
+import Control.Monad (forM_,when)
+import Data.Char (isAscii,isAlphaNum,isDigit)
+import Data.List (isPrefixOf,intercalate)
+import Data.String (IsString(..))
+import Data.Text (Text)
 import Text.Location (Position,FwdRange,fwd)
+
+import qualified Data.Text as T
 
 -- for "term-expressions", which are s-expressions with string atoms, where combinations are always tagged with an explicit constructor (also a string)
 -- or perhaps "text-expressions", as they hold only text
@@ -22,7 +34,7 @@ import Text.Location (Position,FwdRange,fwd)
 type Texprs = [Texpr]
 data Texpr
   = Atom {-# UNPACK #-} !FwdRange String
-  | Combo FwdRange String Texprs
+  | Combo FwdRange CtorName Texprs
 
 start :: Texpr -> Position
 start (Atom r _) = r.anchor
@@ -52,4 +64,43 @@ unparse (Combo _ _ ts) = concat (unparse <$> ts)
 
 instance Show Texpr where
   show (Atom _ str) = show str
-  show (Combo _ name children) = concat ["(", name, concatMap (' ':) $ show <$> children, ")"]
+  show (Combo _ name children) = concat
+    [ "("
+    , ctorNameToString name
+    , concatMap (' ':) $ show <$> children
+    , ")"
+    ]
+
+------------------ Constructor Names ------------------
+
+newtype CtorName = CtorName { unCtorName :: Text }
+  deriving (Eq, Ord)
+instance Show CtorName where
+  show = show . ctorNameToString
+instance IsString CtorName where
+  fromString str = case ctorNameFromString str of
+    Nothing -> error $ "invalid texpr constructor name: " ++ show str
+    Just cname -> cname
+
+ctorNameFromString :: String -> Maybe CtorName
+ctorNameFromString str = do
+  when ("-" `isPrefixOf` str) Nothing
+  parts <- splitDashes str
+  forM_ parts $ \part -> do
+    when (isDigit $ head part) Nothing
+    when (not $ all isIdChar part) Nothing
+  pure $ CtorName $ T.pack $ intercalate "-" parts
+  where
+  isIdChar c = isAscii c && isAlphaNum c || c == '_'
+
+splitDashes :: String -> Maybe [String]
+splitDashes str = case break (=='-') str of
+  ([], _:_) -> Nothing
+  (_, '-':[]) -> Nothing
+  ([], []) -> Just []
+  (part, []) -> Just [part]
+  (part, '-':str') -> (part :) <$> splitDashes str'
+  (_, _:_) -> Nothing
+
+ctorNameToString :: CtorName -> String
+ctorNameToString = T.unpack . unCtorName

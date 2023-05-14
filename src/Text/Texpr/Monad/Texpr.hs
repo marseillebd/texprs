@@ -12,12 +12,12 @@ import Data.Map (Map)
 import Data.Texpr (Texprs,start,end)
 import Text.Location (Position,startPosition)
 import Text.Texpr.Monad.Generic (Stream(..),ErrorReport(..),Reason(..))
-import Text.Texpr.Tree (Rule)
+import Text.Texpr.Tree (Rule,RuleName,ParamName)
 
 import qualified Text.Texpr.Monad.Generic as Monad
 
 runPeg ::
-     Map String ([String], Rule) -- ^ global rule definitions
+     Map RuleName ([ParamName], Rule) -- ^ global rule definitions
   -> Rule -- ^ start rule
   -> Texprs -- ^ input
   -> Either (ErrorReport Input) (Texprs, Input) -- ^ result with remaining input
