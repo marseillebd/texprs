@@ -26,9 +26,12 @@ library
     Text.Texpr.Bootstrap
     Text.Texpr.Compile
     Text.Texpr.Define
-    Text.Texpr.Monad
+    Text.Texpr.Monad.Generic
+    Text.Texpr.Monad.String
+    Text.Texpr.Monad.Texpr
     Text.Texpr.Tree
-  -- other-modules:
+  other-modules:
+    Text.Texpr.Monad
   build-depends:
     , base >=4.11.1
     , containers >=0.6

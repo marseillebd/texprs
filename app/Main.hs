@@ -9,7 +9,7 @@ import Text.Pretty.Simple
 import Data.Map (Map)
 import System.Exit (exitFailure)
 import Text.Location (startInput)
-import Text.Texpr.Monad (runPeg,ErrorReport(..))
+import Text.Texpr.Monad.String (runPeg,ErrorReport(..))
 import Text.Texpr.Tree (Rule(..),pattern Alt,pattern Seq)
 
 import qualified Data.CharSet as CS

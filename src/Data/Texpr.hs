@@ -10,20 +10,9 @@ module Data.Texpr
   -- * To Unstructured
   , flatten
   , unparse
-  -- * Errors
-  , Reason(..)
-  , noReason
   ) where
 
-import Data.CharSet (CharSet)
-import Data.List (intercalate)
-import Data.Map (Map)
-import Data.Set (Set)
 import Text.Location (Position,FwdRange,fwd)
-
-import qualified Data.CharSet as CS
-import qualified Data.Map as Map
-import qualified Data.Set as Set
 
 -- for "term-expressions", which are s-expressions with string atoms, where combinations are always tagged with an explicit constructor (also a string)
 -- or perhaps "text-expressions", as they hold only text
@@ -58,56 +47,9 @@ unparse :: Texpr -> String
 unparse (Atom _ str) = str
 unparse (Combo _ _ ts) = concat (unparse <$> ts)
 
------------------- Errors ------------------
-
-data Reason = Reason
-  { expectAt :: Position
-  , expectingEndOfInput :: Bool
-  , expectingChars :: CharSet
-  , expectingKeywords :: Set String
-  , expectingByName :: Map String Reason
-  , unexpected :: Set String
-  }
-
-noReason :: Position -> Reason
-noReason expectAt = Reason
-  { expectAt
-  , expectingEndOfInput = False
-  , expectingChars = CS.empty
-  , expectingKeywords = Set.empty
-  , expectingByName = Map.empty
-  , unexpected = Set.empty
-  }
-
-instance Semigroup Reason where
-  a <> b = case a.expectAt `compare` b.expectAt of
-    GT -> a
-    EQ -> Reason
-      { expectAt = a.expectAt
-      , expectingEndOfInput = a.expectingEndOfInput || b.expectingEndOfInput
-      , expectingChars = a.expectingChars <> b.expectingChars
-      , expectingKeywords = a.expectingKeywords <> b.expectingKeywords
-      , expectingByName = Map.unionWith (<>) a.expectingByName b.expectingByName
-      , unexpected = a.unexpected <> b.unexpected
-      }
-    LT -> b
 
 ------------------ Rendering ------------------
 
 instance Show Texpr where
   show (Atom _ str) = show str
   show (Combo _ name children) = concat ["(", name, concatMap (' ':) $ show <$> children, ")"]
-
-instance Show Reason where
-  show r = concat
-    [ "(noReason "
-    , show r.expectAt
-    , "){"
-    , intercalate "," $ concat
-      [ if r.expectingEndOfInput then ["expectingEndOfInput=True"] else []
-      , if CS.null r.expectingChars then [] else ["expectingChars=" <> show r.expectingChars]
-      , if Set.null r.expectingKeywords then [] else ["expectingKeywords=" <> show r.expectingKeywords]
-      , if Map.null r.expectingByName then [] else ["expectingByName=" <> show r.expectingByName]
-      ]
-    , "}"
-    ]

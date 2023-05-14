@@ -37,6 +37,7 @@ data Rule
   | Call String [Rule] -- lookup a binding in the current environment and match it
   | Capture String Rule Rule -- i.e. capture string as the text matching Rule₁ and use that binding in Rule₂
   | Replay String -- rather than calling, so we don't have to save an environment
+  | TexprCtor String -- ^ match a texpr which is a combo with the given tag
   deriving (Show,Eq)
 
 pattern Alt :: [Rule] -> Rule
