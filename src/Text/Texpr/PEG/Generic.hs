@@ -3,7 +3,11 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Text.Texpr.Monad.Generic
+-- | This module provides tools for defining parsers over various types of input
+-- stream.
+-- The parsers use grammars defined in TODO to match against input,
+-- producing 'Texprs'.
+module Text.Texpr.PEG.Generic
   ( runPeg
   , Stream(..)
   , ErrorReport(..)
@@ -13,7 +17,7 @@ module Text.Texpr.Monad.Generic
 
 import Prelude hiding (fail,sequence)
 
-import Text.Texpr.Monad
+import Text.Texpr.PEG.Monad
 
 import Data.CharSet (CharSet)
 import Data.Map (Map)

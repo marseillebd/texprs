@@ -11,7 +11,7 @@ maintainer: zankoku.okuno@gmail.com
 copyright: 2023 Marseille Bouchard
 license: BSD-3-Clause
 license-file: LICENSE
-extra-source-files: README.md, CHANGELOG.md
+extra-source-files: README.md, CHANGELOG.md, docs/tbnf.tbnf
 
 source-repository head
   type: git
@@ -22,16 +22,17 @@ library
   exposed-modules:
     Data.CharSet
     Text.Location
+    Text.Location.String
     Data.Texpr
     Text.Texpr.Bootstrap
     Text.Texpr.Compile
     Text.Texpr.Define
-    Text.Texpr.Monad.Generic
-    Text.Texpr.Monad.String
-    Text.Texpr.Monad.Texpr
+    Text.Texpr.PEG.Generic
+    Text.Texpr.PEG.String
+    Text.Texpr.PEG.Texpr
     Text.Texpr.Tree
   other-modules:
-    Text.Texpr.Monad
+    Text.Texpr.PEG.Monad
   build-depends:
     , base >=4.11.1
     , containers >=0.6

@@ -10,6 +10,7 @@
 
 module Text.Texpr.Compile
   ( compile
+  , Error(..)
   ) where
 
 import Control.Monad (foldM)

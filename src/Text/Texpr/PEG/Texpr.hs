@@ -1,8 +1,9 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE TupleSections #-}
 
-module Text.Texpr.Monad.Texpr
+module Text.Texpr.PEG.Texpr
   ( runPeg
+  , Input(..)
   , ErrorReport(..)
   , Reason(..)
   )
@@ -11,10 +12,10 @@ module Text.Texpr.Monad.Texpr
 import Data.Map (Map)
 import Data.Texpr (Texprs,start,end)
 import Text.Location (Position,startPosition)
-import Text.Texpr.Monad.Generic (Stream(..),ErrorReport(..),Reason(..))
+import Text.Texpr.PEG.Generic (Stream(..),ErrorReport(..),Reason(..))
 import Text.Texpr.Tree (Rule,RuleName,ParamName)
 
-import qualified Text.Texpr.Monad.Generic as Monad
+import qualified Text.Texpr.PEG.Generic as Monad
 
 runPeg ::
      Map RuleName ([ParamName], Rule) -- ^ global rule definitions

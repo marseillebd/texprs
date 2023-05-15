@@ -5,7 +5,7 @@
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Text.Texpr.Monad.String
+module Text.Texpr.PEG.String
   ( runPeg
   , ErrorReport(..)
   , Reason(..)
@@ -16,13 +16,13 @@ module Text.Texpr.Monad.String
 import Data.List (stripPrefix)
 import Data.Map (Map)
 import Data.Texpr (Texprs)
-import Text.Location (Input(..))
-import Text.Texpr.Monad.Generic (Stream(..),ErrorReport(..),Reason(..))
+import Text.Location.String (Input(..))
+import Text.Texpr.PEG.Generic (Stream(..),ErrorReport(..),Reason(..))
 import Text.Texpr.Tree (Rule,RuleName,ParamName)
 
 import qualified Data.CharSet as CS
-import qualified Text.Location as Loc
-import qualified Text.Texpr.Monad.Generic as Monad
+import qualified Text.Location.String as Loc
+import qualified Text.Texpr.PEG.Generic as Monad
 
 runPeg ::
      Map RuleName ([ParamName], Rule) -- ^ global rule definitions

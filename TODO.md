@@ -33,7 +33,7 @@
     - [?] And (intersection)
   - [ ] simplify/optimize the rules
     - [ ] un-nest seq and alt
-    - [ ] patterns for `?` and `+`
+    - [ ] eliminate identity elements for seq and alt
   - [ ] extend rules and sets
   - [ ] import grammars
 - TESTING:
@@ -44,6 +44,7 @@
 - [ ] render grammars to html
 - [ ] standard for serializing texpr streams
 - [ ] application that parses into texprs
+  - `texpr >input <peg-over-strings-file> [<peg-over-texprs-file>...] >output`
 - [ ] texpr rewriter language
   - [ ] define a textual grammar for rewriters
   - [ ] the match/rewrite algorithm

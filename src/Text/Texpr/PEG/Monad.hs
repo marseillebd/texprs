@@ -1,7 +1,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 
-module Text.Texpr.Monad
+module Text.Texpr.PEG.Monad
   ( Parse(..)
   , Stream(..)
   , Env(..)

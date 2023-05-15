@@ -5,6 +5,10 @@
 
 -- | This module exports basic types for reporting and manipulationg locations
 -- within plain text documents.
+-- For functions operating on various text formats, see
+-- "Text.Location.String",
+-- TODO "Text.Location.Text", and
+-- TODO "Text.Location.Text.Lazy".
 --
 -- I primarily envision use in interpreters and compilers,
 -- where good reporting of source location is an important tool
@@ -13,7 +17,6 @@ module Text.Location
   ( -- * Single-point Locations
     Position(..)
   , startPosition
-  , advance
   -- ** Rendering
   , tersePos
   , verbosePos
@@ -25,19 +28,10 @@ module Text.Location
   , fwd
   , toFwd
   , fromFwd
-  -- * Remaining Input
-  , Input(..)
-  , startInput
-  , drop
-  , slice
-  -- * Source Fragments
-  , Source(..)
-  , inputToSource
   ) where
 
 import Prelude hiding (drop)
 
-import Data.Function ((&))
 import GHC.Records (HasField(..))
 
 ------------------ Positions ------------------
@@ -56,6 +50,7 @@ data Position = Pos
   }
   deriving (Read,Show)
 
+-- | The default start position: character zero, line 1, column 1.
 startPosition :: Position
 startPosition = Pos 0 1 1
 
@@ -64,28 +59,19 @@ instance Eq Position where
 instance Ord Position where
   Pos n1 _ _ `compare` Pos n2 _ _ = n1 `compare` n2
 
+-- | Display the position in a compact human-readable format.
+-- Specifically, the format is @"\<LINE\>:\<COL\>"@.
+--
+-- See also 'verbosePos' for an alternate format.
 tersePos :: Position -> String
 tersePos p = concat [ show p.line, ":", show p.col ]
 
+-- | Display the position in a human-readable format, sparing no characters.
+-- Specifically, the format is @"line \<LINE\>, column \<COL\>"@.
+--
+-- See also 'tersePos' for an alternate format.
 verbosePos :: Position -> String
 verbosePos p = concat [ "line ", show p.line, ", column ", show p.col ]
-
--- TODO move into Text.Location.String
--- TODO generalize to work on multiple kinds of newline
-advance :: Position -> String -> Position
-advance p0 "" = p0
-advance p0 str = advHuman . advMachine $ p0
-  where
-  trailingNl = case reverse str of  -- because `lines` strips a final newline
-    "\n" -> []                      -- except when the input is just a newline character
-    '\n':_ -> [""]                  -- we need to reinstate the trailing newline
-    _ -> []
-  advMachine p = p{nChars = p.nChars + length str}
-  advHuman p = case lines str <> trailingNl of
-    [] -> p
-    [""] -> p{col = 1, line = p.line + 1}
-    [_] -> p{col = p.col + length str}
-    ls | l <- last ls -> p{line = p.line + length ls - 1, col = 1 + length l}
 
 ------------------ Ranges ------------------
 
@@ -99,63 +85,41 @@ advance p0 str = advHuman . advMachine $ p0
 -- vary based on use.
 data Range = Range
   { anchor :: {-# UNPACK #-} !Position
+  -- ^ the position where the range begins chronologically
+  -- (i.e. where the cursor began selecting)
   , position :: {-# UNPACK #-} !Position
+  -- ^ the position where the range ends chronologically
+  -- (i.e. where the cursor stopped selecting)
   }
   deriving (Eq,Ord, Read,Show)
 
+-- | A range at the given position which contains zero characters.
+--   Like a non-selection cursor.
 pointRange :: Position -> Range
 pointRange p = Range p p
 
--- | A range where the anchor is always before the position.
+-- | A 'Range' where the anchor is always before the position.
 newtype FwdRange = Fwd Range
   deriving (Eq,Ord, Read,Show)
 
 instance HasField "anchor" FwdRange Position where getField (Fwd r) = r.anchor
 instance HasField "position" FwdRange Position where getField (Fwd r) = r.position
 
+-- | Create a 'FwdRange' from the two input positions,
+--   swapping them as necessary to ensure the 'anchor' is before the 'position'.
 fwd :: Position -> Position -> FwdRange
+{-# INLINE fwd #-}
 fwd p1 p2 = Fwd $ if p1 <= p2 then Range p1 p2 else Range p2 p1
 
+-- | Convert a 'Range' toa 'FwdRange',
+--   swapping them as necessary to ensure the 'anchor' is before the 'position'.
 toFwd :: Range -> FwdRange
 toFwd r = fwd r.anchor r.position
 
+-- | Convert a 'FwdRange' into a 'Range'
+--   without altering the semantics of 'anchor' and 'position'.
 fromFwd :: FwdRange -> Range
 fromFwd (Fwd r) = r
 
 instance Semigroup FwdRange where
   a <> b = Fwd $ Range a.anchor b.position
-
-
------------------- Remaining Input ------------------
-
-data Input = Input
-  { loc :: {-# UNPACK #-} !Position
-  , txt :: !String
-  }
-  deriving (Read,Show)
-
-startInput :: String -> Input
-startInput str = Input startPosition str
-
-drop :: Input -> Position -> Input
-drop inp p' =
-  let (_, post) = splitAt (p'.nChars - inp.loc.nChars) inp.txt
-   in Input p' post
-
--- TODO move into Text.Location.String
-slice :: Input -> FwdRange -> Source
-slice inp r = (drop inp r.anchor).txt
-  & Prelude.take (r.position.nChars - r.anchor.nChars)
-  & Source r
-
------------------- Source Fragments ------------------
-
-data Source = Source
-  { loc :: {-# UNPACK #-} !FwdRange
-  , txt :: !String
-  }
-  deriving (Read,Show)
-
-inputToSource :: Input -> Source
-inputToSource inp = Source (Fwd $ Range inp.loc loc') inp.txt
-  where loc' = inp.loc `advance` inp.txt
