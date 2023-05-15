@@ -1,7 +1,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 
-module Text.Texpr.PEG.Monad
+module Text.Tbnf.Read.Monad
   ( Parse(..)
   , Stream(..)
   , Env(..)
@@ -16,7 +16,7 @@ module Text.Texpr.PEG.Monad
   , lookupGlobal
   , lookupLocal
   , lookupCapture
-  , ErrorReport(..)
+  , ReaderError(..)
   , Reason(..)
   , noReason
   ) where
@@ -29,7 +29,7 @@ import Data.Set (Set)
 import Data.Texpr (Texprs,Texpr,CtorName)
 import Data.These (These(..))
 import Text.Location (Position,FwdRange,fwd)
-import Text.Texpr.Tree (Rule(..),RuleName,ParamName,paramNameFromRuleName)
+import Text.Tbnf.Tree (Rule(..),RuleName,ParamName,paramNameFromRuleName)
 
 import qualified Data.CharSet as CS
 import qualified Data.Map as Map
@@ -37,7 +37,7 @@ import qualified Data.Set as Set
 
 ------ The Monad ------
 
-newtype Parse s a = Parse { unParse :: Env -> s -> These (a, s) (ErrorReport s) }
+newtype Parse s a = Parse { unParse :: Env -> s -> These (a, s) (ReaderError s) }
 
 data Env = Env
   { global :: Map RuleName ([ParamName], Rule)
@@ -69,13 +69,13 @@ instance (Stream s) => Monad (Parse s) where
       These ok err' -> These ok (err <> err')
 
 
-catch :: (Stream s) => Parse s a -> Parse s (Either (ErrorReport s) a)
+catch :: (Stream s) => Parse s a -> Parse s (Either (ReaderError s) a)
 catch action = Parse $ \env inp -> case unParse action env inp of
   This (ok, inp') -> This (Right ok, inp')
   That err -> These (Left err, inp) err
   These (ok, inp') err -> These (Right ok, inp') err
 
-mapErr :: (Stream s) => Parse s a -> (ErrorReport s -> ErrorReport s) -> Parse s a
+mapErr :: (Stream s) => Parse s a -> (ReaderError s -> ReaderError s) -> Parse s a
 mapErr action f = Parse $ \env inp -> second f $ unParse action env inp
 
 getInput :: (Stream s) => Parse s s
@@ -117,29 +117,51 @@ lookupCapture x = Parse $ \env inp -> This (Map.lookup x env.captures, inp)
 
 ------------------ Stream ------------------
 
+-- | 'Text.Tbnf.Read.Generic.runReader' already exhibits parametric polymorphism
+-- through most of its algorithm.
+-- However, a few of the most primitive readers require inpection of the input
+-- stream which will depend on the specifics of its type.
+-- Implementing this class will provide 'Text.Tbnf.Read.Generic.runReader' with
+-- the ability to inpect the input stream as necessary.
 class Stream s where
+  -- | Input streams must be able to report current 'Position' through this method.
   location :: s -> Position
+  -- | If the given input stream begins with a character that is in the
+  -- given 'CharSet', return that character and the rest of the input stream.
   takeChar :: CharSet -> s -> Maybe (Char, s)
+  -- | Take as many characters as possible off the beginning of the input as
+  -- long as those characters are all in the given 'CharSet' stream; return
+  -- them and the remaining input stream.
   takeChars :: CharSet -> s -> (String, s)
+  -- | If the input stream begins with the given string, return the remaining
+  -- input after that prefix.
   stripStringPrefix :: String -> s -> Maybe s
+  -- | If the input stream begins with a 'Texpr', return it along with the
+  -- remaining input stream.
   takeTexpr :: s -> Maybe (Texpr, s)
+  -- | Return whether the given input stream is empty
   isAtEnd :: s -> Bool
 
 ------------------ Errors ------------------
 
-data ErrorReport s = Err
-  { prior :: Texprs
-  , reason :: Reason
-  , remaining :: s
+-- | Report an error while reading input.
+data ReaderError s = Err
+  { prior :: Texprs -- ^ texprs that had been successfully created (but not necessarily placed into a tree)
+  , reason :: Reason -- ^ explain why the error occurred (i.e. what what expected or unexpected?)
+  , remaining :: s -- ^ input remaining after error
   }
   deriving (Show)
 
-instance (Stream s) => Semigroup (ErrorReport s) where
+instance (Stream s) => Semigroup (ReaderError s) where
   a <> b = case location a.remaining `compare` location b.remaining of
     GT -> a
     EQ -> a{reason = a.reason <> b.reason}
     LT -> b
 
+-- | Explanation for why a 'ReaderError' occurred.
+-- I.e. what input was expected or unexpected at what position?
+--
+-- The 'Semigroup' for 'Reason' prefers reasons that are further in the input.
 data Reason = Reason
   { expectAt :: Position
   , expectingEndOfInput :: Bool
@@ -150,6 +172,8 @@ data Reason = Reason
   , unexpected :: Set String
   }
 
+-- | Give no explanation for why an error occurred.
+-- This is used as a base value that can be modified to add expected/unexpected input.
 noReason :: Position -> Reason
 noReason expectAt = Reason
   { expectAt

@@ -3,45 +3,58 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE ViewPatterns #-}
 
--- | This module provides tools for defining parsers over various types of input
+-- | This module provides tools for defining readers over various types of input
 -- stream.
--- The parsers use grammars defined in TODO to match against input,
--- producing 'Texprs'.
-module Text.Texpr.PEG.Generic
-  ( runPeg
-  , Stream(..)
-  , ErrorReport(..)
+-- The readers use 'Text.Tbnf.Tbnf' grammars to match against input and
+-- produce 'Texprs'.
+--
+-- The most important interface here is the 'Stream' class.
+-- If you are implementing 'Stream' for yourself, you may find it useful to
+--   look in "Text.Tbnf.Read.String" or "Text.Tbnf.Read.Texpr" for examples.
+--
+-- We call these readers rather than parsers in the tradition of Lisp.
+-- In Lisp, a reader takes an input string to an s-expression,
+--   and from there the s-expression is then parsed (by special forms and macros)
+--   to recognize the abstract syntax of Lisp.
+-- Because t-exprs take on a role similar to s-exprs, we will use this same terminology.
+-- (Rant: because I'm so tired of getting a zillion new names for the same thing,
+-- and while I'm at it, also a zillion things that all go by the same name.
+-- Will programmers ever learn their own history?)
+module Text.Tbnf.Read.Generic
+  ( runReader
+  , ReaderError(..)
   , Reason(..)
   , noReason
+  , Stream(..)
   ) where
 
 import Prelude hiding (fail,sequence)
 
-import Text.Texpr.PEG.Monad
+import Text.Tbnf.Read.Monad
 
 import Data.CharSet (CharSet)
-import Data.Map (Map)
 import Data.Maybe (maybeToList)
 import Data.Texpr (Texprs,Texpr(..),flatten,unparse,CtorName)
 import Data.These (These(..))
 import Text.Location (fwd)
-import Text.Texpr.Tree (Rule(..),RuleName,ParamName)
+import Text.Tbnf.Tree (CompiledTbnf(..),Rule(..),RuleName,ParamName)
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
-runPeg :: (Stream s)
-  => Map RuleName ([ParamName], Rule) -- ^ global rule definitions
-  -> Rule -- ^ start rule
+-- | Create a stream of 'Texpr's from an input stream that matches the given
+-- grammar, or report an error.
+runReader :: (Stream s)
+  => CompiledTbnf
   -> s -- ^ input
-  -> Either (ErrorReport s) (Texprs, s) -- ^ result with remaining input
-runPeg ruleSet startRule inp0 = case go of
+  -> Either (ReaderError s) (Texprs, s) -- ^ result with remaining input
+runReader tbnf inp0 = case go of
   This ok -> Right ok
   That err -> Left err
   These ok _ -> Right ok
   where
-  go = unParse (parse startRule) env0 inp0
-  env0 = Env { global = ruleSet, local = Map.empty, captures = Map.empty }
+  go = unParse (parse tbnf.startRule) env0 inp0
+  env0 = Env { global = tbnf.rules, local = Map.empty, captures = Map.empty }
 
 ------ Parsing ------
 

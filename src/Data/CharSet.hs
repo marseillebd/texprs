@@ -84,7 +84,7 @@ contiguous a b
 --   to a representation that is fully inspectable.
 --
 -- Since this is implemented naively, I recommend that you use 'fromFunction'
---    on a given function exactly once, and mark it as 'NOINLINE'.
+--    on a given function exactly once, and mark it as @NOINLINE@.
 -- Otherwise, expensive computations might be replicated.
 fromFunction :: (Char -> Bool) -> CharSet
 fromFunction f = CS $ loop [minBound .. maxBound]

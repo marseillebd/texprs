@@ -5,31 +5,31 @@
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Text.Texpr.PEG.String
-  ( runPeg
-  , ErrorReport(..)
+-- | Implements readers that take a 'String' as input.
+module Text.Tbnf.Read.String
+  ( runReader
+  , Input(..)
+  , ReaderError(..)
   , Reason(..)
   ) where
 
--- import Prelude hiding (fail,sequence)
-
 import Data.List (stripPrefix)
-import Data.Map (Map)
 import Data.Texpr (Texprs)
 import Text.Location.String (Input(..))
-import Text.Texpr.PEG.Generic (Stream(..),ErrorReport(..),Reason(..))
-import Text.Texpr.Tree (Rule,RuleName,ParamName)
+import Text.Tbnf.Read.Generic (Stream(..),ReaderError(..),Reason(..))
+import Text.Tbnf.Tree (CompiledTbnf)
 
 import qualified Data.CharSet as CS
 import qualified Text.Location.String as Loc
-import qualified Text.Texpr.PEG.Generic as Monad
+import qualified Text.Tbnf.Read.Generic as Monad
 
-runPeg ::
-     Map RuleName ([ParamName], Rule) -- ^ global rule definitions
-  -> Rule -- ^ start rule
+-- | Create a stream of 'Data.Texpr.Texpr's from an input 'String' that matches
+-- the given grammar, or report an error.
+runReader ::
+     CompiledTbnf
   -> Input -- ^ input
-  -> Either (ErrorReport Input) (Texprs, Input) -- ^ result with remaining input
-runPeg = Monad.runPeg
+  -> Either (ReaderError Input) (Texprs, Input) -- ^ result with remaining input
+runReader = Monad.runReader
 
 instance Stream Input where
   location = (.loc)

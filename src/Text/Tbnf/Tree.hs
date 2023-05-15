@@ -2,8 +2,9 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Text.Texpr.Tree
-  ( Rule(..)
+module Text.Tbnf.Tree
+  ( CompiledTbnf(..)
+  , Rule(..)
   , pattern Alt
   , pattern Seq
   -- * Special Names
@@ -21,11 +22,22 @@ import Control.Monad (forM_,when)
 import Data.Char (isAscii,isAlphaNum,isDigit)
 import Data.CharSet (CharSet)
 import Data.List (isPrefixOf,intercalate)
+import Data.Map (Map)
 import Data.String (IsString(..))
 import Data.Texpr (CtorName)
 import Data.Text (Text)
 
 import qualified Data.Text as T
+
+-- | An internal representation of a compiled Tbnf grammar, ready to be used as
+-- a reader.
+--
+-- See 'Text.Tbnf.Read.Generic.runReader'.
+data CompiledTbnf = Tbnf
+  { rules :: Map RuleName ([ParamName], Rule)
+  , startRule :: Rule
+  }
+  deriving (Eq)
 
 -- TODO factor out common prefixes
   -- that is, when there's an alternation with two branches that share a common grammar prefix, I want to do the parse once and re-use the results
@@ -78,6 +90,11 @@ fromSeq g = [g]
 
 ------------------ Special Names ------------------
 
+-- | A newtype restricting the format of parameter name strings.
+-- Specifically, parameter names should be simple identifiers.
+-- Formally, they must match the regex:
+--
+-- >  [a-zA-Z_][a-zA-Z0-9_]*
 newtype ParamName = ParamName { unParamName :: Text }
   deriving (Eq, Ord)
 instance Show ParamName where
@@ -87,6 +104,7 @@ instance IsString ParamName where
     Nothing -> error $ "invalid texpr PEG parameter name: " ++ show str
     Just cname -> cname
 
+-- | Convert a string to a 'ParamName' if the input is valid.
 paramNameFromString :: String -> Maybe ParamName
 paramNameFromString str = do
   when (null str) Nothing
@@ -94,9 +112,15 @@ paramNameFromString str = do
   when (not $ all isIdChar str) Nothing
   pure $ ParamName $ T.pack str
 
+-- | Convert a 'ParamName' back into a plain string.
 paramNameToString :: ParamName -> String
 paramNameToString = T.unpack . unParamName
 
+-- | A newtype restricting the format of rule name strings.
+-- Specifically, rule names should be dot-separated identifiers.
+-- Formally, they must match the regex:
+--
+-- >  [a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*
 newtype RuleName = RuleName { unRuleName :: Text }
   deriving (Eq, Ord)
 instance Show RuleName where
@@ -106,6 +130,7 @@ instance IsString RuleName where
     Nothing -> error $ "invalid texpr PEG rule name: " ++ show str
     Just cname -> cname
 
+-- | Convert a string to a 'RuleName' if the input is valid.
 ruleNameFromString :: String -> Maybe RuleName
 ruleNameFromString str = do
   when ("." `isPrefixOf` str) Nothing
@@ -115,6 +140,7 @@ ruleNameFromString str = do
     when (not $ all isIdChar part) Nothing
   pure $ RuleName $ T.pack $ intercalate "." parts
 
+-- | Convert a 'RuleName' back into a plain string.
 ruleNameToString :: RuleName -> String
 ruleNameToString = T.unpack . unRuleName
 

@@ -5,7 +5,7 @@
 - FIXES:
 - CLEANUP:
   - [x] newtypes for restricted strings
-  - [ ] hackage docs
+  - [x] hackage docs
   - [?] module Data.Range (ORDS(DisjointGT,TangentGT,OverlapGT,ContainGT,EQ,..)Ords(compares))
       - possibly just use hackage `range` library
   - [x] output tbnf.tbnf Define form to Haskell

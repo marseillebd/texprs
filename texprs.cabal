@@ -24,15 +24,16 @@ library
     Text.Location
     Text.Location.String
     Data.Texpr
-    Text.Texpr.Bootstrap
-    Text.Texpr.Compile
-    Text.Texpr.Define
-    Text.Texpr.PEG.Generic
-    Text.Texpr.PEG.String
-    Text.Texpr.PEG.Texpr
-    Text.Texpr.Tree
+    Text.Tbnf
+    Text.Tbnf.Bootstrap
+    Text.Tbnf.Read.Generic
+    Text.Tbnf.Read.String
+    Text.Tbnf.Read.Texpr
   other-modules:
-    Text.Texpr.PEG.Monad
+    Text.Tbnf.Compile
+    Text.Tbnf.Define
+    Text.Tbnf.Read.Monad
+    Text.Tbnf.Tree
   build-depends:
     , base >=4.11.1
     , containers >=0.6

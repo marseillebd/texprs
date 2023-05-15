@@ -8,9 +8,9 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Text.Texpr.Compile
+module Text.Tbnf.Compile
   ( compile
-  , Error(..)
+  , CompileError(..)
   ) where
 
 import Control.Monad (foldM)
@@ -20,39 +20,56 @@ import Data.List (find)
 import Data.Map (Map)
 import Data.Set (Set)
 import Text.Location (FwdRange)
-import Text.Texpr.Define (Peg(..),Rule(..),SatClass(..),CharClass(..))
-import Text.Texpr.Define (StartDef,RuleDef,ClassDef)
-import Text.Texpr.Tree (RuleName,ParamName,paramNameFromRuleName,ruleNameFromParamName)
+import Text.Tbnf.Define (Tbnf(..),Rule(..),SatClass(..),CharClass(..))
+import Text.Tbnf.Define (StartDef,RuleDef,ClassDef)
+import Text.Tbnf.Tree (CompiledTbnf,RuleName,ParamName,paramNameFromRuleName,ruleNameFromParamName)
 
 import qualified Data.CharSet as CS
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import qualified Text.Texpr.Tree as Tree
+import qualified Text.Tbnf.Tree as Tree
 
-data Error
+-- | Represent any error that may occur during 'compile'.
+data CompileError
   = CircularClassDefinitions [(FwdRange, RuleName)]
+  -- ^ class definitions are not allowed to reference themselves in their definition
+  -- (directly or indirectly through other class definitions)
   | DuplicateClassDefinitions [FwdRange] RuleName
+  -- ^ two or more class definitions may not have the same name
   | DuplicateRuleDefinitions [FwdRange] RuleName
+  -- ^ two or more rule definitions may not have the same name
   | EmptyRange FwdRange Char Char
+  -- ^ where a character range is defined by lower and upper bounds,
+  -- the lower bound must be less than or equal to the upper bound
   | EmptyRepetition FwdRange Int Int
+  -- ^ in bounded repetition (such as @foo{1,4}@),
+  -- the the lower bound must be less than or equal to the upper bound
   | NoStartRule
+  -- ^ no start rule could be identified
   | ReplayTakesNoArguments FwdRange ParamName
+  -- ^ variables bound to captures are nullary
   | StartRuleCannotBeParametric FwdRange RuleName [ParamName]
+  -- ^ the start rule must be nullary
   | UndefinedClass FwdRange RuleName
+  -- ^ a character class was referenced by name, but that name was undefined
   | UndefinedRule FwdRange RuleName
+  -- ^ a rule was referenced by name, but that name was undefined
   | WrongNumberOfArguments FwdRange Int RuleName Int
+  -- ^ a call to a (global) rule was made with a number of arguments that does not match that rule's arity
   deriving (Show)
 
-compile :: Peg -> Either [Error] (Map RuleName ([ParamName], Tree.Rule), Tree.Rule)
+-- | Perform frontend analysis to ensure the given grammar is well-formed.
+-- TODO: optimize the resulting grammar.
+compile :: Tbnf -> Either [CompileError] CompiledTbnf
 compile peg = do
   clss <- compileClasses peg.classes
   rs <- compileRules clss peg.rules
   s <- compileStart peg.start peg.rules
-  pure (rs, s)
+  pure $ Tree.Tbnf rs s
 
 ------------------ Start Rule ------------------
 
-compileStart :: StartDef -> [RuleDef] -> Either [Error] Tree.Rule
+compileStart :: StartDef -> [RuleDef] -> Either [CompileError] Tree.Rule
 compileStart Nothing rules = case find isStart rules of
   Just (_, (_, g, []), _) -> pure $ Tree.Call g []
   Just (_, (r, g, params), _) ->Left [StartRuleCannotBeParametric r g params]
@@ -70,7 +87,7 @@ compileStart (Just (r, x)) gs = case find (\(_, (_, y, _), _) -> x == y) gs of
 compileRules ::
      Map RuleName CharSet
   -> [RuleDef]
-  -> Either [Error] (Map RuleName ([ParamName], Tree.Rule))
+  -> Either [CompileError] (Map RuleName ([ParamName], Tree.Rule))
 compileRules clss gs = do
   () <- checkDuplicateNames getName DuplicateRuleDefinitions gs
   let arities = Map.fromList $ getArityDef <$> gs
@@ -80,7 +97,7 @@ compileRules clss gs = do
         , captures = Set.empty
         , isUnderFlat = False
         }
-      go :: RuleDef -> Either [Error] (Map RuleName ([ParamName], Tree.Rule))
+      go :: RuleDef -> Either [CompileError] (Map RuleName ([ParamName], Tree.Rule))
       go (_, (_, x, params), g) = do
         let locals = Map.fromList $ (,0) . ruleNameFromParamName <$> params
             st = st0{arities = locals `Map.union` st0.arities}
@@ -98,7 +115,7 @@ data CompileRuleState = RuleSt
   , isUnderFlat :: Bool
   }
 
-compileRule :: CompileRuleState -> Rule -> Either [Error] Tree.Rule
+compileRule :: CompileRuleState -> Rule -> Either [CompileError] Tree.Rule
 compileRule st = \case
   Alt _ gs -> Tree.Alt <$> compileRule st `mapM` gs
   Seq _ gs -> Tree.Seq <$> compileRule st `mapM` gs
@@ -146,7 +163,7 @@ compileRep !g !n0 (Just !m0) = loop n0 m0
   loop 0 !m = (Tree.Seq [ g, loop 0 (m - 1) ]) `Tree.Alt2` Tree.Empty
   loop !n !m = Tree.Seq [ g, loop (n - 1) (m - 1) ]
 
-compileSatisfy :: Map RuleName CharSet -> SatClass -> Either [Error] CharSet
+compileSatisfy :: Map RuleName CharSet -> SatClass -> Either [CompileError] CharSet
 compileSatisfy clss = \case
   SatVar loc x -> case Map.lookup x clss of
     Just cls -> pure cls
@@ -159,7 +176,7 @@ compileSatisfy clss = \case
 
 ------------------ Character Classes ------------------
 
-compileClasses :: [ClassDef] -> Either [Error] (Map RuleName CharSet)
+compileClasses :: [ClassDef] -> Either [CompileError] (Map RuleName CharSet)
 compileClasses clss = do
   () <- checkDuplicateNames getName DuplicateClassDefinitions clss
   let go defd = \case
@@ -180,10 +197,10 @@ compileClasses clss = do
   fv (ClassUnion a b) = fv a <> fv b
   fv (ClassMinus a b) = fv a <> fv b
 
-compileClass :: Map RuleName CharSet -> ClassDef -> Either [Error] (Map RuleName CharSet)
+compileClass :: Map RuleName CharSet -> ClassDef -> Either [CompileError] (Map RuleName CharSet)
 compileClass defd (_, (_, name), body) = Map.singleton name <$> go body
   where
-  go :: CharClass -> Either [Error] CharSet
+  go :: CharClass -> Either [CompileError] CharSet
   go (ClassVar r x) = case Map.lookup x defd of
     Just v -> pure v
     Nothing -> Left [UndefinedClass r x]
@@ -199,14 +216,15 @@ compileClass defd (_, (_, name), body) = Map.singleton name <$> go body
 
 checkDuplicateNames ::
      (a -> (FwdRange, RuleName)) -- ^ map a definition to its (located) name
-  -> ([FwdRange] -> RuleName -> Error) -- ^ map a name and its multiple definition locations to an error
+  -> ([FwdRange] -> RuleName -> CompileError)
+  -- ^ map a name and its multiple definition locations to an error
   -> [a]
-  -> Either [Error] ()
+  -> Either [CompileError] ()
 checkDuplicateNames getName toError xs = case detect of
   [] -> Right ()
   errs -> Left errs
   where
-  detect :: [Error]
+  detect :: [CompileError]
   detect = fmap (uncurry $ flip toError) . Map.assocs
     $ Map.filter isMultipleDefinition
     $ Map.unionsWith (<>) (toName <$> xs)
