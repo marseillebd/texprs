@@ -5,6 +5,7 @@
 - FIXES:
 - CLEANUP:
   - [ ] use what is now `Reason` as `ReaderError`, rename `ReaderError` to something else
+  - [ ] move (de)serializers from Main
   - [x] newtypes for restricted strings
   - [x] hackage docs
   - [?] module Data.Range (ORDS(DisjointGT,TangentGT,OverlapGT,ContainGT,EQ,..)Ords(compares))

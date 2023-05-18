@@ -85,8 +85,9 @@ main = do
       | ".tbnf" `isSuffixOf` file -> do
         Tbnf.readFile file >>= \case
           Right g -> pure $ Parse g
-          Left (Left err) -> hPrint stderr err.reason >> exitFailure -- TODO print this much more nicely thanks!
-          Left (Right err) -> hPrint stderr err >> exitFailure
+          Left (Left err) ->
+            hPrint stderr (renderError (Just file) err.reason) >> exitFailure
+          Left (Right err) -> hPrint stderr err >> exitFailure -- TODO print this much more nicely thanks!
       | otherwise -> do
         hPutStrLn stderr $ "unrecognized file extension on file " ++ show file
         exitFailure
@@ -96,7 +97,7 @@ main = do
     Parse g -> \case
       StrAcc str -> case String.runReader g (startInput str) of
         Right (ts, _) -> pure $ TexprAcc ts
-        Left err -> hPrint stderr err.reason >> exitFailure -- TODO print this much more nicely thanks!
+        Left err -> hPrint stderr (renderError Nothing err.reason) >> exitFailure
   ts <- case r of
     StrAcc _ -> error "tbnf pipeline failed to produce texprs"
     TexprAcc ts -> pure ts

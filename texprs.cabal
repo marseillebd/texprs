@@ -21,9 +21,10 @@ library
   hs-source-dirs: src
   exposed-modules:
     Data.CharSet
+    Data.Texpr
+    Data.Tree.Match
     Text.Location
     Text.Location.String
-    Data.Texpr
     Text.Tbnf
     Text.Tbnf.Bootstrap
     Text.Tbnf.IO
