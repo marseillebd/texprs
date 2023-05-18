@@ -63,11 +63,11 @@ data Rule
   | Ctor CtorName Rule
   | Flat Rule
   | AsUnit Rule -- ^ if the rule fails, fail as soon as the rule started (i.e. like an `Expect`, but no new error message)
-  | Expect String Rule
+  | Expect Rule String
   | Call RuleName [Rule] -- lookup a binding in the current environment and match it
   | Capture ParamName Rule Rule -- i.e. capture string as the text matching Rule₁ and use that binding in Rule₂
   | Replay ParamName -- rather than calling, so we don't have to save an environment
-  | TexprCtor CtorName -- ^ match a texpr which is a combo with the given tag
+  | TexprCombo CtorName -- ^ match a texpr which is a combo with the given tag
   deriving (Show,Eq)
 
 pattern Alt :: [Rule] -> Rule

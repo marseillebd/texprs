@@ -20,8 +20,8 @@ import Data.List (find)
 import Data.Map (Map)
 import Data.Set (Set)
 import Text.Location (FwdRange)
-import Text.Tbnf.Define (Tbnf(..),Rule(..),SatClass(..),CharClass(..))
 import Text.Tbnf.Define (StartDef,RuleDef,ClassDef)
+import Text.Tbnf.Define (Tbnf(..),Rule(..),SatClass(..),CharClass(..))
 import Text.Tbnf.Tree (CompiledTbnf,RuleName,ParamName,paramNameFromRuleName,ruleNameFromParamName)
 
 import qualified Data.CharSet as CS
@@ -137,6 +137,7 @@ compileRule st = \case
   Str _ str -> pure $ Tree.Str str
   End _ -> pure Tree.End
   Void _ msg -> pure $ Tree.Void msg
+  Expect _ g msg -> flip Tree.Expect msg <$> compileRule st g
   Flat _ g -> Tree.Flat <$> compileRule st g
   Call loc name args -> case Map.lookup name st.arities of
     Just ar
@@ -150,6 +151,7 @@ compileRule st = \case
         False -> Left [UndefinedRule loc name]
       Nothing -> Left [UndefinedRule loc name]
   Ctor _ name g -> Tree.Ctor name <$> compileRule st g
+  TexprCombo _ name -> pure $ Tree.TexprCombo name
 
 compileRep :: Tree.Rule -> Int -> Maybe Int -> Tree.Rule
 compileRep !g !n0 Nothing = loop n0

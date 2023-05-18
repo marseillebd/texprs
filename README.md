@@ -51,3 +51,8 @@ Well, it could stand for many things:
 - or maybe even "token-expression", as it contains
     all the (possibly nested) tokens of a source file,
 - or cheekily, because @s++ === t@.
+
+## Contribution Notes
+
+If you change the grammar in `tbnf.tbnf`, then uncomment the `print peg` line in `test/Main.hs` and run `cabal run test`.
+This will generate Haskell source code for the grammar that can them be pasted over the contents of `Text.Tbnf.Bootstrap.tbnf`.

@@ -72,11 +72,11 @@ parse = \case
   Ctor name g -> ctor name g
   Flat g -> flat g
   AsUnit g -> asUnit g
-  Expect desc g -> expect desc g
+  Expect g msg -> expect g msg
   Call f gs -> call f gs
   Capture x g1 g2 -> capture x g1 g2
   Replay x -> replay x
-  TexprCtor name -> texprCtor name
+  TexprCombo name -> combo name
 
 satisfy :: (Stream s) => CharSet -> Parse s Texprs
 satisfy cs = Parse $ \env inp -> case takeChar cs inp of
@@ -147,14 +147,14 @@ flat g = do
 asUnit :: (Stream s) => Rule -> Parse s Texprs
 asUnit g = parse g `mapErr` \err -> err{prior = []}
 
-expect :: (Stream s) => String -> Rule -> Parse s Texprs
-expect desc g = do
+expect :: (Stream s) => Rule -> String -> Parse s Texprs
+expect g msg = do
   inp0 <- getInput
   parse g `mapErr` \err -> Err
     { prior = []
     , remaining = inp0
     , reason = (noReason $ location inp0)
-                {expectingByName = Map.singleton desc err.reason}
+                {expectingByName = Map.singleton msg err.reason}
     }
 
 call :: (Stream s) => RuleName -> [Rule] -> Parse s Texprs
@@ -181,8 +181,8 @@ replay x = lookupCapture x >>= \case
   Just str -> string str
   Nothing -> errorWithoutStackTrace  $ "internal Texpr-Peg error: unbound capture " ++ show x
 
-texprCtor :: (Stream s) => CtorName -> Parse s Texprs
-texprCtor name = Parse $ \env inp -> case takeTexpr inp of
+combo :: (Stream s) => CtorName -> Parse s Texprs
+combo name = Parse $ \env inp -> case takeTexpr inp of
   Just (t@(Combo _ name' _), inp') | name == name' -> This ([t], inp')
   _ ->
     let explain = (noReason $ location inp){expectingCtors = Set.singleton name}
@@ -202,8 +202,7 @@ subst = \case
   Ctor name g -> Ctor name <$> subst g
   Flat g -> Flat <$> subst g
   AsUnit g -> AsUnit <$> subst g
-  Expect desc g -> Expect desc <$> subst g
-  -- Fail msg -> pure $ Fail msg
+  Expect g msg -> flip Expect msg <$> subst g
   Call f [] -> lookupLocal f >>= \case
     Just g -> pure g
     Nothing -> pure $ Call f []
@@ -212,4 +211,4 @@ subst = \case
   Replay x -> lookupCapture x >>= \case
     Just txt -> pure $ Str txt
     Nothing -> errorWithoutStackTrace  $ "internal Texpr-Peg error: unbound capture " ++ show x
-  TexprCtor name -> pure $ TexprCtor name
+  TexprCombo name -> pure $ TexprCombo name

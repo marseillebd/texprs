@@ -162,6 +162,7 @@ In fact, that is just what the `rule-call: …` alternative states.
 >   = rule-group: enclose.parens<Rule.allowFlat>
 >   | rule-call: Name.rule enclose.angles<sep.comma<Rule.allowFlat>>?
 >   | rule-flat: f
+>   | rule-combo: enclose.braces<Name.ctor>
 >   | Rule.prim
 >
 > Rule.Flat = enclose<'/', Rule.disallowFlat, '/'>
@@ -208,12 +209,19 @@ Then, we have our constructor rule, which we have already seen in use.
 >   = rule-ctor: Name.ctor colon Rule.Seq<f>
 >   | Rule.Seq<f>
 
-Finally, we have alternation, which is done with 
+And a rule that translates error messages to a more readable form.
+Any errors that occur inside the rule will instead be reported subordinate to the given error message.
+
+> Rule.Expect<f>
+>   = rule-expect: Rule.Term<f> lws+ "??" lws+ '"' chars.dq+ '"'
+>   | Rule.Term<f>
+
+Finally, we have alternation, which is done with a single bar.
 As in PEGs, this is ordered choice, so it introduces no ambiguity.
 
 > Rule<f>
->   = rule-alt: Rule.Term<f> (lws+ '|' lws+ Rule.Term<f>)+
->   | Rule.Term<f>
+>   = rule-alt: Rule.Expect<f> (lws+ '|' lws+ Rule.Expect<f>)+
+>   | Rule.Expect<f>
 
 ## Character Classes
 

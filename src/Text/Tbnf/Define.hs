@@ -46,9 +46,11 @@ data Rule
   | Str FwdRange String -- ^ match a specific string (a sequence of specific characters)
   | End FwdRange -- ^ match at the end of input
   | Void FwdRange String -- ^ always fail to match, reporting the given error message
+  | Expect FwdRange Rule String -- ^ if the rule fails to match, replace the error message
   | Flat FwdRange Rule -- ^ whatever texprs are formed by the rule matching, flatten the result into a single atom
   | Call FwdRange RuleName [Rule] -- ^ call a rule, use a parameter, or replay a named capture
   | Ctor FwdRange CtorName Rule -- ^ whatever texprs match the rule, package them into a combination with the given name
+  | TexprCombo FwdRange CtorName -- ^ match a single texpr which is a combo with the given constructor
   deriving (Show)
 
 -- | The abstract syntax defining character sets for the 'Sat' and 'SatNeg' constructors.

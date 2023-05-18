@@ -147,7 +147,7 @@ class Stream s where
 -- | Report an error while reading input.
 data ReaderError s = Err
   { prior :: Texprs -- ^ texprs that had been successfully created (but not necessarily placed into a tree)
-  , reason :: Reason -- ^ explain why the error occurred (i.e. what what expected or unexpected?)
+  , reason :: Reason -- ^ explain why the error occurred (i.e. what was expected or unexpected?)
   , remaining :: s -- ^ input remaining after error
   }
   deriving (Show)

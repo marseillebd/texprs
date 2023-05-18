@@ -9,14 +9,17 @@
 module Text.Tbnf.Read.String
   ( runReader
   , Input(..)
-  , ReaderError(..)
+  , ReaderError
+  , Monad.prior
+  , Monad.reason
+  , Monad.remaining
   , Reason(..)
   ) where
 
 import Data.List (stripPrefix)
 import Data.Texpr (Texprs)
 import Text.Location.String (Input(..))
-import Text.Tbnf.Read.Generic (Stream(..),ReaderError(..),Reason(..))
+import Text.Tbnf.Read.Generic (Stream(..),Reason(..))
 import Text.Tbnf.Tree (CompiledTbnf)
 
 import qualified Data.CharSet as CS
@@ -28,8 +31,10 @@ import qualified Text.Tbnf.Read.Generic as Monad
 runReader ::
      CompiledTbnf
   -> Input -- ^ input
-  -> Either (ReaderError Input) (Texprs, Input) -- ^ result with remaining input
+  -> Either ReaderError (Texprs, Input) -- ^ result with remaining input
 runReader = Monad.runReader
+
+type ReaderError = Monad.ReaderError Input
 
 instance Stream Input where
   location = (.loc)
