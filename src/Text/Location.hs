@@ -26,6 +26,7 @@ module Text.Location
   -- ** Forward Ranges
   , FwdRange
   , fwd
+  , maybeFwd
   , toFwd
   , fromFwd
   ) where
@@ -110,6 +111,10 @@ instance HasField "position" FwdRange Position where getField (Fwd r) = r.positi
 fwd :: Position -> Position -> FwdRange
 {-# INLINE fwd #-}
 fwd p1 p2 = Fwd $ if p1 <= p2 then Range p1 p2 else Range p2 p1
+
+maybeFwd :: Position -> Position -> Maybe FwdRange
+{-# INLINE maybeFwd #-}
+maybeFwd p1 p2 = if p1 <= p2 then Just (Fwd $ Range p1 p2) else Nothing
 
 -- | Convert a 'Range' toa 'FwdRange',
 --   swapping them as necessary to ensure the 'anchor' is before the 'position'.

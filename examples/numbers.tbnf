@@ -1,0 +1,53 @@
+TODO split ascii definitions into another file
+
+> :Ascii.Digit: = '0'..'9'
+> :Ascii.Digit.bin: = '0'..'1'
+> :Ascii.Digit.oct: = '0'..'7'
+> :Ascii.Digit.hex: = '0'..'9' | 'a'..'f' | 'A'..'F'
+
+> Number
+>  = Number.base<'0' [bB] ?? "0b", [pP], Number.Digits.base2>
+>  | Number.base<'0' [oO] ?? "0o", [pP], Number.Digits.base8>
+>  | Number.base<'0' [xX] ?? "0x", [pP], Number.Digits.base16>
+>  | Number.base.noPrefix<[eE], Number.Digits.base10>
+
+Here are some other bases that might be included:
+  - base60 by "0{60}" prefix, using ':' separators between base-10 integers
+  - RFC4648 §4 base64 by "0{64}" prefix
+  - RFC4648 §5 base64url by "0{64u}" prefix
+  - RFC4648 §6 base32 by "0{32}" prefix
+  - RFC4648 §7 base32hex by "0{32h}" prefix
+  - base36 "0{36}"
+  - base62
+  - base85 RFC 1924 or Z85 (likely Z85, as I think it has seen more use)
+
+> Number.base.noPrefix<expMark,digits> =
+>  (sign: Number.Sign)?
+>  digits
+>  (fractional: Number.Fractional<digits>)?
+>  (exponent: Number.Exponent<expMark, digits>)?
+
+> Number.base<baseMark,expMark,digits> =
+>  (sign: Number.Sign)?
+>  (base: baseMark)
+>  digits
+>  (fractional: Number.Fractional<digits>)?
+>  (exponent: Number.Exponent<expMark, digits>)?
+
+
+> Number.Sign = [+ '-'] ?? "sign (+ or -)"
+>
+> Number.Digits.base2 = Number.Digits.NoSep<
+>   [:Ascii.Digit.bin:]+ ?? "binary digit" >
+> Number.Digits.base8 = Number.Digits.NoSep<
+>   [:Ascii.Digit.oct:]+ ?? "octal digit" >
+> Number.Digits.base10 = Number.Digits.NoSep<
+>   [:Ascii.Digit:]+ ?? "decimal digit" >
+> Number.Digits.base16 = Number.Digits.NoSep<
+>   [:Ascii.Digit.hex:]+ ?? "hexadecimal digit" >
+> Number.Digits.NoSep<raw> = /raw+ ('_'+ raw+)*/
+>
+> Number.Fractional<digits> = '.' digits
+> Number.Exponent<mark, digits> = mark (sign: Number.Sign)? digits
+
+> start = ( /[' ' '\n']+/ ?? "whitespace" | number: Number )* $

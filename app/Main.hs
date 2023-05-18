@@ -5,12 +5,14 @@
 
 module Main (main) where
 
+import Prelude hiding (init)
+
 import Control.Applicative (Alternative(..),(<**>))
 import Control.Monad (forM,forM_)
-import Data.Char (ord)
+import Data.Char (ord,isDigit,isAscii,isAlpha,isAlphaNum)
 import Data.Functor ((<&>))
 import Data.List (intercalate,isSuffixOf)
-import Data.Texpr (Texprs,Texpr(..),ctorNameToString)
+import Data.Texpr (Texprs,Texpr(..),CtorName,ctorNameToString,ctorNameFromString)
 import Options.Applicative (bashCompleter,completer)
 import Options.Applicative (metavar,help,short,long)
 import Options.Applicative (Parser,ParserInfo,execParser,info)
@@ -18,16 +20,18 @@ import Options.Applicative (progDesc,fullDesc,header,helper)
 import Options.Applicative (switch,strArgument)
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn,hPrint,stderr)
-import Text.Location (Position(..),verbosePos)
+import Text.Location (Position(..),FwdRange,maybeFwd,verbosePos)
 import Text.Location.String (startInput)
+import Text.ParserCombinators.ReadP (ReadP,readP_to_S)
 import Text.Tbnf (CompiledTbnf)
 
 import qualified Data.CharSet as CS
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import qualified Data.Texpr as Texpr
+import qualified Text.ParserCombinators.ReadP as Read
 import qualified Text.Tbnf.IO as Tbnf
 import qualified Text.Tbnf.Read.String as String
+import qualified Text.Tbnf.Read.Texpr as Texpr
 
 data Options = Options
   { isInputTexpr :: Bool
@@ -41,7 +45,7 @@ parseOpts = do
   isInputTexpr <- switch
     (  long "read-texpr"
     <> short 't'
-    <> help "TODO treat input as a serialized texpr rather than a text string"
+    <> help "treat input as a serialized texpr rather than a text string"
     )
   isOutputShort <- switch
     (  long "short-output"
@@ -65,7 +69,7 @@ optParser = info (parseOpts <**> helper)
     "Takes an input file from stdin and produces t-exprs on stdout.\n\
     \Parsing is done with the passed files;\n\
     \  files ending in `.tbnf` are TBNF grammars,\n\
-    \  those ending in `.trw` are t-expr rewriters (TODO).\n\
+    \  those ending in `.trwl` are t-expr rewriters (TODO).\n\
     \Input is fed through the parsers/rewriters in order."
   <> header "tbnf - flexible parser system producing t-exprs"
   )
@@ -86,18 +90,26 @@ main = do
         Tbnf.readFile file >>= \case
           Right g -> pure $ Parse g
           Left (Left err) ->
-            hPrint stderr (renderError (Just file) err.reason) >> exitFailure
+            hPutStrLn stderr (renderError (Just file) err.reason) >> exitFailure
           Left (Right err) -> hPrint stderr err >> exitFailure -- TODO print this much more nicely thanks!
       | otherwise -> do
         hPutStrLn stderr $ "unrecognized file extension on file " ++ show file
         exitFailure
-  inp <- getContents
-  let acc0 = StrAcc inp
+  acc0 <- if opts.isInputTexpr
+    then TexprAcc <$> do
+      inp <- getContents
+      case filter (null . snd) $ readP_to_S readTexprs inp of
+        ((ts, ""):_) -> pure ts
+        other -> hPutStrLn stderr "input texpr is corrupt" >> hPrint stderr other >> exitFailure
+    else StrAcc <$> getContents
   r <- forAcc stages acc0 $ \case
     Parse g -> \case
       StrAcc str -> case String.runReader g (startInput str) of
         Right (ts, _) -> pure $ TexprAcc ts
-        Left err -> hPrint stderr (renderError Nothing err.reason) >> exitFailure
+        Left err -> hPutStrLn stderr (renderError Nothing err.reason) >> exitFailure
+      TexprAcc ts -> case Texpr.runReader g ts of
+        Right (ts', _) -> pure $ TexprAcc ts'
+        Left err -> hPutStrLn stderr (renderError Nothing err.reason) >> exitFailure
   ts <- case r of
     StrAcc _ -> error "tbnf pipeline failed to produce texprs"
     TexprAcc ts -> pure ts
@@ -115,7 +127,7 @@ render ::
   -> Maybe Int -- ^ indentation depth, or disable indentation
   -> Texpr -> String
 render noLocation depth t =
-  let loc = if noLocation then "" else renderLocation (Texpr.start t)
+  let loc = if noLocation then "" else renderLoc t.loc
       (indent, depth') = case depth of
         Nothing -> (" ", Nothing)
         Just i -> ('\n' : replicate (2*i) ' ', Just (i + 1))
@@ -134,9 +146,11 @@ render noLocation depth t =
       , ")"
       ]
 
-
-renderLocation :: Position -> String
-renderLocation p = concat [show p.nChars, ":", show p.line, ":", show p.col]
+renderLoc :: FwdRange -> String
+renderLoc l = concat [renderPos l.anchor, "-", renderPos l.position]
+  where
+  renderPos :: Position -> String
+  renderPos p = concat [show p.nChars, ":", show p.line, ":", show p.col]
 
 renderLeaf :: String -> String
 renderLeaf str = concat ["\"", concatMap renderChar str, "\""]
@@ -174,7 +188,7 @@ renderError fileName reason =
       expectations = intercalate ", " $ concat
         [ Map.assocs reason.expectingByName <&> \(name, _) -> name -- TODO show subreason
         , if CS.null reason.expectingChars then [] else
-            ["one of the characters " ++ show reason.expectingChars]
+            ["one of the characters " ++ CS.render reason.expectingChars]
         , if null reason.expectingKeywords then [] else
             [  "one of the strings "
             ++ intercalate ", " (fmap show $ Set.toList reason.expectingKeywords)
@@ -190,6 +204,66 @@ renderError fileName reason =
         else intercalate ", " (fmap show $ Set.toList reason.unexpected)
    in concat
       [ locLine
-      , ":\n  unexpected: " ++ unexpectations
-      , ":\n  expecting:" ++ expectations
+      , ":"
+      , if null unexpectations then "" else "\n  unexpected: " ++ unexpectations
+      , "\n  expecting: " ++ expectations
       ]
+
+readTexprs :: ReadP [Texpr]
+readTexprs = do
+  readSpace
+  readTexpr `Read.endBy` readSpace
+
+readTexpr :: ReadP Texpr
+readTexpr = do
+  loc <- readLoc
+  ($ loc) <$> (readCombo Read.<++ readAtom)
+  where
+  readLoc :: ReadP FwdRange
+  readLoc = do
+    start <- readPos
+    Read.char '-'
+    end <- readPos
+    maybe Read.pfail pure $ maybeFwd start end
+  readPos :: ReadP Position
+  readPos = do
+    nChars <- read <$> Read.munch1 isDigit
+    Read.char ':'
+    line <- read <$> Read.munch1 isDigit
+    Read.char ':'
+    col <- read <$> Read.munch1 isDigit
+    pure $ Pos {nChars,line,col}
+  readAtom :: ReadP (FwdRange -> Texpr)
+  readAtom = do
+    Read.char '\"'
+    str <- Read.many $ Read.choice
+      ( ( Read.satisfy (\c -> ' ' <= c && c /= '\DEL') )
+      : ( '\n' <$ Read.string "\\n" )
+      : ( '\"' <$ Read.string "\\\"" )
+      : ( '\\' <$ Read.string "\\\\" )
+      : ( '\DEL' <$ Read.string "\DEL" )
+      : ( flip map (zip ['\0'..] iso2047) $ \(c, name) ->
+          c <$ Read.string ('\\':name) )
+      )
+    Read.char '\"'
+    pure $ \loc -> Atom loc str
+  readCombo :: ReadP (FwdRange -> Texpr)
+  readCombo = do
+    Read.char '('
+    readSpace
+    ctor <- readCtor
+    children <- Read.many (readSpace1 >> readTexpr)
+    readSpace
+    Read.char ')'
+    pure $ \loc -> Combo loc ctor children
+  readCtor :: ReadP CtorName
+  readCtor = do
+    init <- Read.satisfy (\c -> isAscii c && (isAlpha c || c == '_'))
+    cont <- Read.munch (\c -> isAscii c && (isAlphaNum c || c == '_'))
+    let internalErr = error "internal error deserializing texpr"
+    maybe internalErr pure $ ctorNameFromString (init:cont)
+
+readSpace :: ReadP ()
+readSpace = () <$ Read.munch (\c -> c `elem` " \n\t\r")
+readSpace1 :: ReadP ()
+readSpace1 = () <$ Read.munch1 (\c -> c `elem` " \n\t\r")

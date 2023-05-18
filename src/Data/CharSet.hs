@@ -173,8 +173,8 @@ render :: CharSet -> String
 render (CS rs) = intercalate "," (renderRange <$> rs)
   where
   renderRange r
-    | r.lo == r.hi = r.lo:""
-    | otherwise = concat [r.lo:"", "-", r.hi:""]
+    | r.lo == r.hi = show r.lo
+    | otherwise = concat [show r.lo, "-", show r.hi]
 
 instance Semigroup CharSet where (<>) = union
 instance Monoid CharSet where mempty = empty

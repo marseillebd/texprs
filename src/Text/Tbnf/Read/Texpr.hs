@@ -15,7 +15,7 @@ module Text.Tbnf.Read.Texpr
   )
   where
 
-import Data.Texpr (Texprs,start,end)
+import Data.Texpr (Texprs)
 import Text.Location (Position,startPosition)
 import Text.Tbnf.Read.Generic (Stream(..),ReaderError(..),Reason(..))
 import Text.Tbnf.Tree (CompiledTbnf)
@@ -46,7 +46,7 @@ instance Stream Input where
   stripStringPrefix _ = const Nothing
 
   takeTexpr Input{toks = t:ts} =
-    let loc' = case ts of { t':_ -> start t'; _ -> end t }
+    let loc' = case ts of { t':_ -> t'.start; _ -> t.end }
      in Just (t, Input loc' ts)
   takeTexpr _ = Nothing
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -6,9 +7,6 @@
 module Data.Texpr
   ( Texpr(..)
   , Texprs
-  , start
-  , end
-  , range
   -- * To Unstructured
   , flatten
   , unparse
@@ -23,6 +21,7 @@ import Data.Char (isAscii,isAlphaNum,isDigit)
 import Data.List (isPrefixOf,intercalate)
 import Data.String (IsString(..))
 import Data.Text (Text)
+import GHC.Records (HasField(..))
 import Text.Location (Position,FwdRange,fwd)
 
 import qualified Data.Text as T
@@ -61,19 +60,14 @@ data Texpr
   = Atom {-# UNPACK #-} !FwdRange String -- TODO use Text instead of String
   | Combo {-# UNPACK #-} !FwdRange CtorName Texprs
 
--- | Get the 'Position' of the start of the given 'Texpr'.
-start :: Texpr -> Position
-start (Atom r _) = r.anchor
-start (Combo r _ _) = r.anchor
-
--- | Get the 'Position' of the end of the given 'Texpr'.
-end :: Texpr -> Position
-end (Atom r _) = r.position
-end (Combo r _ _) = r.position
-
--- | Get the start and end 'Position's of the given 'Texpr'.
-range :: Texpr -> FwdRange
-range t = fwd (start t) (end t)
+-- | Retrieve the location of the 'Texpr' as a `FwdRange'.
+instance HasField "loc" Texpr FwdRange where
+  getField (Atom loc _) = loc
+  getField (Combo loc _ _) = loc
+-- | Retrieve the start location of the 'Texpr' as a `Position'.
+instance HasField "start" Texpr Position where getField t = t.loc.anchor
+-- | Retrieve the end location of the 'Texpr' as a `Position'.
+instance HasField "end" Texpr Position where getField t = t.loc.position
 
 -- | Concatenate all nodes of the given forest of 'Texpr's in inorder traversal.
 -- Produces an atom whose range is computed based on
@@ -84,7 +78,7 @@ flatten :: [Texpr] -> Maybe Texpr -- TODO check uses of this to ensure I'm not d
 flatten [] = Nothing
 flatten ts0 = Just . Atom p . goList $ ts0
   where
-  p = fwd (start $ head ts0) (end $ last ts0)
+  p = fwd (head ts0).start (last ts0).end
   goList ts = concat $ goTree <$> ts
   goTree (Atom _ str) = str
   goTree (Combo _ _ ts) = goList ts
