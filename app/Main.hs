@@ -49,7 +49,7 @@ parseOpts = do
     )
   isOutputShort <- switch
     (  long "short-output"
-    <> short 'V'
+    <> short 's'
     <> help "omit location information from the output texpr"
     )
   stageFiles <- some $ strArgument

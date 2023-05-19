@@ -58,5 +58,5 @@ If you change the grammar in `tbnf.tbnf`, then uncomment the `print peg` line in
 This will generate Haskell source code for the grammar that can them be pasted over the contents of `Text.Tbnf.Bootstrap.tbnf`.
 
 If you want my github password,
-  run `cabal run tbnf -- -V examples/numbers.tbnf examples/starting_number.tbnf <examples/numbers.in` /jk.
+  run `cabal run tbnf -- -s examples/numbers.tbnf examples/starting_number.tbnf <examples/numbers.in` /jk.
 But seriously, it should print out a texpr holding the number `1234`.

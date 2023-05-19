@@ -6,6 +6,7 @@
 - CLEANUP:
   - [ ] use what is now `Reason` as `ReaderError`, rename `ReaderError` to something else
   - [ ] move (de)serializers from Main
+  - [ ] better readme
   - [x] newtypes for restricted strings
   - [x] hackage docs
   - [?] module Data.Range (ORDS(DisjointGT,TangentGT,OverlapGT,ContainGT,EQ,..)Ords(compares))
@@ -54,16 +55,15 @@
 
 ## Stage 2
 
-- [ ] render grammars to html
-- [ ] standard for serializing texpr streams
+- [x] standard for serializing texpr streams
 - [ ] texpr rewriter language
   - [ ] define a textual grammar for rewriters
-  - [ ] the match/rewrite algorithm
-- imagine if, instead of just operating over characters, parsers could also operate over texprs
-  - then, we could do a lexing phase over characters, followed by a parsing phase over tokens
-  - I'd probly use syntax like `[Foo]` to match any texpr with a `Foo` ctor; and that'd be that
-    - because if you're using this part of the parser, you don't want to dig inside tokens
-    - well, maybe `[Foo: g1 (g2.a g2.b) g3]` to match sub-expressions or `[g1]` to match atoms
+  - [x] the match/rewrite algorithm
+
+## Stage 3+
+
+- [ ] better error detection/reporting for trwl
 - [?] when erroring, collect a context along with the input so that parsing can be resumed
 - interfaces:
   - [ ] represent grammars (high- and low-level) as json
+  - [ ] render grammars to html

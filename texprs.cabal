@@ -23,6 +23,7 @@ library
     Data.CharSet
     Data.Texpr
     Data.Tree.Match
+    Data.Tree.Template
     Text.Location
     Text.Location.String
     Text.Tbnf
