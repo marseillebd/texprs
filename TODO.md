@@ -19,14 +19,15 @@
   - [x] ErrorReport should be a record
   - [x] Texpr.Error (and ErrorReport) should carry a "reason", which is just the expected set + position
 - FEATURES:
-  - [ ] application that parses into texprs
+  - [x] application that parses into texprs
     - `texpr >input <peg-over-strings-file> [<peg-over-texprs-file>...] >output`
     - [x] parse options
     - [x] read and compile grammars
     - [x] output texpr
-    - [ ] read input texprs
+    - [x] read input texprs
     - [x] output short form texpr
-    - [ ] render errors nicely
+    - [x] render errors nicely
+    - [ ] render errors even more nicely
   - [ ] primitive grammars
     - 6 columns: Tree.hs, Monad.hs, Define.hs, Compile.hs, Bootstrap.hs, tbnf.tbnf
     - [x][x][x][x][x][x] shallow Texpr Combo
@@ -45,6 +46,7 @@
       - the following ones must match the text the first parsed
     - [ ][ ][ ][ ][ ][ ] Any (char or texpr)
     - [ ][ ][ ][ ][ ][ ] Lookahead
+    - [ ][ ][ ][ ][ ][ ] Repeat-Until
   - [ ] simplify/optimize the rules
     - [ ] un-nest seq and alt
     - [ ] eliminate identity elements for seq and alt
@@ -59,6 +61,12 @@
 - [ ] texpr rewriter language
   - [ ] define a textual grammar for rewriters
   - [x] the match/rewrite algorithm
+
+## Use Texprs/Trwl
+
+- listdown
+- natural deduction unicode -> latex
+- autows
 
 ## Stage 3+
 

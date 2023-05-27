@@ -3,6 +3,7 @@ module Text.Tbnf.IO
   -- , readFileWith
   , ReaderError, prior, reason, remaining
   , CompileError(..)
+  , fromString
   ) where
 
 import Prelude hiding (readFile)
@@ -17,9 +18,11 @@ import qualified Text.Tbnf.Bootstrap as Boot
 import qualified Text.Tbnf.Read.String as String
 
 readFile :: FilePath -> IO (Either (Either ReaderError [CompileError]) CompiledTbnf)
-readFile filePath = do
-  fileContent <- Prelude.readFile filePath
-  pure $ case String.runReader Boot.grammar (startInput fileContent) of
+readFile filePath = fromString <$> Prelude.readFile filePath
+
+fromString :: String -> Either (Either ReaderError [CompileError]) CompiledTbnf
+fromString inp = do
+  case String.runReader Boot.grammar (startInput inp) of
     Right (ts, _) -> case Tbnf.compile (Boot.parseTbnf (Boot.clean ts)) of
       Right g -> Right g
       Left err -> Left (Right err)

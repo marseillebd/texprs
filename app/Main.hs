@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Main (main) where
 
@@ -16,7 +17,7 @@ import Data.Texpr (Texprs,Texpr(..),CtorName,ctorNameToString,ctorNameFromString
 import Options.Applicative (bashCompleter,completer)
 import Options.Applicative (metavar,help,short,long)
 import Options.Applicative (Parser,ParserInfo,execParser,info)
-import Options.Applicative (progDesc,fullDesc,header,helper)
+import Options.Applicative (progDescDoc,fullDesc,header,helper)
 import Options.Applicative (switch,strArgument)
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn,hPrint,stderr)
@@ -28,6 +29,7 @@ import Text.Tbnf (CompiledTbnf)
 import qualified Data.CharSet as CS
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Prettyprinter as PP
 import qualified Text.ParserCombinators.ReadP as Read
 import qualified Text.Tbnf.IO as Tbnf
 import qualified Text.Tbnf.Read.String as String
@@ -65,14 +67,31 @@ parseOpts = do
 optParser :: ParserInfo Options
 optParser = info (parseOpts <**> helper)
   (  fullDesc
-  <> progDesc
-    "Takes an input file from stdin and produces t-exprs on stdout.\n\
-    \Parsing is done with the passed files;\n\
-    \  files ending in `.tbnf` are TBNF grammars,\n\
-    \  those ending in `.trwl` are t-expr rewriters (TODO).\n\
-    \Input is fed through the parsers/rewriters in order."
+  <> progDescDoc (Just doc)
+    -- "Takes an input file from stdin and produces t-exprs on stdout.\n\n\
+    -- \Parsing is done with the passed files;\n\
+    -- \  files ending in `.tbnf` are TBNF grammars,\n\
+    -- \  files ending in `.tbnf-ill` are illiterate TBNF grammars,\n\
+    -- \  those ending in `.trwl` are t-expr rewriters (TODO).\n\
+    -- \Input is fed through the parsers/rewriters in order."
   <> header "tbnf - flexible parser system producing t-exprs"
   )
+  where
+  doc = PP.vsep
+    [ PP.sep
+      [ "Takes an input file from stdin and produces t-exprs on stdout."
+      , "The reader pipeline specified by FILES, performed in-order"
+      , "The list of recognized file extensions is:"
+      ]
+    , PP.indent 2 $ PP.vsep
+      [ "- `.tbnf`: TBNF grammars"
+      , "- `.trwl` are t-expr rewriters (TODO)"
+      , PP.hang 4 $ PP.sep
+        [ "- `.tbnf-ill` are illiterate TBNF grammars"
+        , "These are useful for prototyping, where one may not want to write birds feet everywhere."
+        ]
+      ]
+    ]
 
 data Stage
   = Parse CompiledTbnf
@@ -88,6 +107,12 @@ main = do
     file
       | ".tbnf" `isSuffixOf` file -> do
         Tbnf.readFile file >>= \case
+          Right g -> pure $ Parse g
+          Left (Left err) ->
+            hPutStrLn stderr (renderError (Just file) err.reason) >> exitFailure
+          Left (Right err) -> hPrint stderr err >> exitFailure -- TODO print this much more nicely thanks!
+      | ".tbnf-ill" `isSuffixOf` file -> do
+        (Tbnf.fromString . unlines . map ("> " <>) . lines) <$> readFile file >>= \case
           Right g -> pure $ Parse g
           Left (Left err) ->
             hPutStrLn stderr (renderError (Just file) err.reason) >> exitFailure
@@ -264,6 +289,6 @@ readTexpr = do
     maybe internalErr pure $ ctorNameFromString (init:cont)
 
 readSpace :: ReadP ()
-readSpace = () <$ Read.munch (\c -> c `elem` " \n\t\r")
+readSpace = () <$ Read.munch (\c -> c `elem` (" \n\t\r" :: String))
 readSpace1 :: ReadP ()
-readSpace1 = () <$ Read.munch1 (\c -> c `elem` " \n\t\r")
+readSpace1 = () <$ Read.munch1 (\c -> c `elem` (" \n\t\r" :: String))
