@@ -5,8 +5,8 @@
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
--- | Implements readers that take a 'String' as input.
-module Text.Tbnf.Read.String
+-- | Implements readers that take a 'Text' as input.
+module Text.Tbnf.Read.Text
   ( runReader
   , Input(..)
   , ReaderError
@@ -16,18 +16,18 @@ module Text.Tbnf.Read.String
   , Reason(..)
   ) where
 
-import Data.List (stripPrefix)
+import Control.Monad (when)
 import Data.Texpr (Texprs)
-import Text.Location.String (Input(..))
+import Text.Location.Text (Input(..))
 import Text.Tbnf.Read.Generic (Stream(..),Reason(..))
 import Text.Tbnf.Tree (CompiledTbnf)
 
 import qualified Data.CharSet as CS
 import qualified Data.Text as T
-import qualified Text.Location.String as Loc
+import qualified Text.Location.Text as Loc
 import qualified Text.Tbnf.Read.Generic as Monad
 
--- | Create a stream of 'Data.Texpr.Texpr's from an input 'String' that matches
+-- | Create a stream of 'Data.Texpr.Texpr's from an input 'Text' that matches
 -- the given grammar, or report an error.
 runReader ::
      CompiledTbnf
@@ -40,22 +40,22 @@ type ReaderError = Monad.ReaderError Input
 instance Stream Input where
   location = (.loc)
 
-  takeChar cs inp = case inp.txt of
-    c:txt' | c `CS.elem` cs ->
-      let loc' = Loc.advance inp.loc [c]
-       in Just (c, Input loc' txt')
-    _ -> Nothing
+  takeChar cs inp = do
+    (c, txt') <- T.uncons inp.txt
+    when (not $ c `CS.elem` cs) Nothing
+    let loc' = Loc.advance inp.loc (T.singleton c)
+    pure (c, Input loc' txt')
 
   takeChars cs inp =
-    let (ok, txt') = span (`CS.elem` cs) inp.txt
+    let (ok, txt') = T.span (`CS.elem` cs) inp.txt
         loc' = Loc.advance inp.loc ok
-     in (T.pack ok, Input loc' txt')
+     in (ok, Input loc' txt')
 
-  stripStringPrefix (T.unpack -> pre) inp = do
-    txt' <- stripPrefix pre inp.txt
+  stripStringPrefix pre inp = do
+    txt' <- T.stripPrefix pre inp.txt
     let loc' = Loc.advance inp.loc pre
     pure $ Input loc' txt'
 
   takeTexpr = const Nothing
 
-  isAtEnd inp = null $ inp.txt
+  isAtEnd inp = T.null $ inp.txt

@@ -53,9 +53,9 @@ data CompiledTbnf = Tbnf
 data Rule
   = Sat CharSet
   | Many CharSet -- ^ just an efficient synonym for a flattened sequence of singleton char sets
-  | Str String -- ^ just an efficient synonym for a flattened sequence of singleton char sets
+  | Str Text -- ^ just an efficient synonym for a flattened sequence of singleton char sets
   | End
-  | Void String -- ^ includes a message
+  | Void Text -- ^ includes a message
   | Alt2 Rule Rule
   | Empty
   | Seq2 Rule Rule
@@ -63,7 +63,7 @@ data Rule
   | Ctor CtorName Rule
   | Flat Rule
   | AsUnit Rule -- ^ if the rule fails, fail as soon as the rule started (i.e. like an `Expect`, but no new error message)
-  | Expect Rule String
+  | Expect Rule Text
   | Call RuleName [Rule] -- lookup a binding in the current environment and match it
   | Capture ParamName Rule Rule -- i.e. capture string as the text matching Rule₁ and use that binding in Rule₂
   | Replay ParamName -- rather than calling, so we don't have to save an environment

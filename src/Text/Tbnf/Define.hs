@@ -14,6 +14,7 @@ module Text.Tbnf.Define
   ) where
 
 import Data.Texpr (CtorName)
+import Data.Text (Text)
 import Text.Location (FwdRange)
 import Text.Tbnf.Tree (RuleName,ParamName)
 
@@ -43,10 +44,10 @@ data Rule
   | Sat FwdRange [SatClass] -- ^ match a single character when it is in a given class
   | SatNeg FwdRange [SatClass] -- ^ match a single character when it is _not_ in a given class
   | Char FwdRange Char -- ^ match a single, specific character
-  | Str FwdRange String -- ^ match a specific string (a sequence of specific characters)
+  | Str FwdRange Text -- ^ match a specific string (a sequence of specific characters)
   | End FwdRange -- ^ match at the end of input
-  | Void FwdRange String -- ^ always fail to match, reporting the given error message
-  | Expect FwdRange Rule String -- ^ if the rule fails to match, replace the error message
+  | Void FwdRange Text -- ^ always fail to match, reporting the given error message
+  | Expect FwdRange Rule Text -- ^ if the rule fails to match, replace the error message
   | Flat FwdRange Rule -- ^ whatever texprs are formed by the rule matching, flatten the result into a single atom
   | Call FwdRange RuleName [Rule] -- ^ call a rule, use a parameter, or replay a named capture
   | Ctor FwdRange CtorName Rule -- ^ whatever texprs match the rule, package them into a combination with the given name

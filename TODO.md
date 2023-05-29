@@ -7,6 +7,7 @@
   - [ ] use what is now `Reason` as `ReaderError`, rename `ReaderError` to something else
   - [ ] move (de)serializers from Main
   - [ ] better readme
+  - [ ] try to remove T.pack/unpack as much as possible
   - [x] newtypes for restricted strings
   - [x] hackage docs
   - [?] module Data.Range (ORDS(DisjointGT,TangentGT,OverlapGT,ContainGT,EQ,..)Ords(compares))

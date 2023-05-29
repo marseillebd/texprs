@@ -14,6 +14,7 @@ import Data.Char (ord,isDigit,isAscii,isAlpha,isAlphaNum)
 import Data.Functor ((<&>))
 import Data.List (intercalate,isSuffixOf)
 import Data.Texpr (Texprs,Texpr(..),CtorName,ctorNameToString,ctorNameFromString)
+import Data.Text (Text)
 import Options.Applicative (bashCompleter,completer)
 import Options.Applicative (metavar,help,short,long)
 import Options.Applicative (Parser,ParserInfo,execParser,info)
@@ -22,17 +23,19 @@ import Options.Applicative (switch,strArgument)
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn,hPrint,stderr)
 import Text.Location (Position(..),FwdRange,maybeFwd,verbosePos)
-import Text.Location.String (startInput)
+import Text.Location.Text (startInput)
 import Text.ParserCombinators.ReadP (ReadP,readP_to_S)
 import Text.Tbnf (CompiledTbnf)
 
 import qualified Data.CharSet as CS
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import qualified Prettyprinter as PP
 import qualified Text.ParserCombinators.ReadP as Read
 import qualified Text.Tbnf.IO as Tbnf
-import qualified Text.Tbnf.Read.String as String
+import qualified Text.Tbnf.Read.Text as Text
 import qualified Text.Tbnf.Read.Texpr as Texpr
 
 data Options = Options
@@ -97,7 +100,7 @@ data Stage
   = Parse CompiledTbnf
 
 data Acc
-  = StrAcc String
+  = StrAcc Text
   | TexprAcc Texprs
 
 main :: IO ()
@@ -126,10 +129,10 @@ main = do
       case filter (null . snd) $ readP_to_S readTexprs inp of
         ((ts, ""):_) -> pure ts
         other -> hPutStrLn stderr "input texpr is corrupt" >> hPrint stderr other >> exitFailure
-    else StrAcc <$> getContents
+    else StrAcc <$> T.getContents
   r <- forAcc stages acc0 $ \case
     Parse g -> \case
-      StrAcc str -> case String.runReader g (startInput str) of
+      StrAcc str -> case Text.runReader g (startInput str) of
         Right (ts, _) -> pure $ TexprAcc ts
         Left err -> hPutStrLn stderr (renderError Nothing err.reason) >> exitFailure
       TexprAcc ts -> case Texpr.runReader g ts of
@@ -158,7 +161,7 @@ render noLocation depth t =
         Just i -> ('\n' : replicate (2*i) ' ', Just (i + 1))
    in case t of
     Atom _ str -> concat
-      [loc, renderLeaf str]
+      [loc, renderLeaf (T.unpack str)]
     Combo _ ctor [] -> concat
       [ loc, "(", ctorNameToString ctor, ")" ]
     Combo _ ctor [child@(Atom _ _)] -> concat
@@ -200,7 +203,7 @@ iso2047 =
 -- TODO use a pretty-printer
 renderError ::
      Maybe FilePath
-  -> String.Reason
+  -> Text.Reason
   -> String
 renderError fileName reason =
   let locLine = concat
@@ -211,7 +214,7 @@ renderError fileName reason =
         , verbosePos reason.expectAt
         ]
       expectations = intercalate ", " $ concat
-        [ Map.assocs reason.expectingByName <&> \(name, _) -> name -- TODO show subreason
+        [ Map.assocs reason.expectingByName <&> \(name, _) -> T.unpack name -- TODO show subreason
         , if CS.null reason.expectingChars then [] else
             ["one of the characters " ++ CS.render reason.expectingChars]
         , if null reason.expectingKeywords then [] else
@@ -271,7 +274,7 @@ readTexpr = do
           c <$ Read.string ('\\':name) )
       )
     Read.char '\"'
-    pure $ \loc -> Atom loc str
+    pure $ \loc -> Atom loc (T.pack str)
   readCombo :: ReadP (FwdRange -> Texpr)
   readCombo = do
     Read.char '('

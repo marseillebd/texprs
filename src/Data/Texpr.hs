@@ -57,7 +57,7 @@ type Texprs = [Texpr]
 -- - or maybe even "token-expression", as it contains all the (possibly nested) tokens of a source file,
 -- - or cheekily, because @s++ === t@.
 data Texpr
-  = Atom {-# UNPACK #-} !FwdRange String -- TODO use Text instead of String
+  = Atom {-# UNPACK #-} !FwdRange Text -- TODO use Text instead of String
   | Combo {-# UNPACK #-} !FwdRange CtorName Texprs
 
 -- | Retrieve the location of the 'Texpr' as a `FwdRange'.
@@ -79,7 +79,7 @@ flatten [] = Nothing
 flatten ts0 = Just . Atom p . goList $ ts0
   where
   p = fwd (head ts0).start (last ts0).end
-  goList ts = concat $ goTree <$> ts
+  goList ts = mconcat $ goTree <$> ts
   goTree (Atom _ str) = str
   goTree (Combo _ _ ts) = goList ts
 
@@ -87,9 +87,9 @@ flatten ts0 = Just . Atom p . goList $ ts0
 --
 -- If the given 'Texpr' was generated from parsing source text without dropping
 -- characters, then 'unparse' will return the original source text.
-unparse :: Texpr -> String
+unparse :: Texpr -> Text
 unparse (Atom _ str) = str
-unparse (Combo _ _ ts) = concat (unparse <$> ts)
+unparse (Combo _ _ ts) = mconcat (unparse <$> ts)
 
 ------------------ Rendering ------------------
 

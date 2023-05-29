@@ -35,12 +35,14 @@ import Text.Tbnf.Read.Monad
 import Data.CharSet (CharSet)
 import Data.Maybe (maybeToList)
 import Data.Texpr (Texprs,Texpr(..),flatten,unparse,CtorName)
+import Data.Text (Text)
 import Data.These (These(..))
 import Text.Location (fwd)
 import Text.Tbnf.Tree (CompiledTbnf(..),Rule(..),RuleName,ParamName)
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.Text as T
 
 -- | Create a stream of 'Texpr's from an input stream that matches the given
 -- grammar, or report an error.
@@ -82,7 +84,7 @@ satisfy :: (Stream s) => CharSet -> Parse s Texprs
 satisfy cs = Parse $ \env inp -> case takeChar cs inp of
   Just (c, inp') ->
     let loc = fwd (location inp) (location inp')
-     in This ([Atom loc (c:"")], inp')
+     in This ([Atom loc (T.singleton c)], inp')
   Nothing -> unParse (throw explain) env inp
     where explain = (noReason $ location inp){expectingChars = cs} -- WARNING I'm assuming cs is a non-empty set
 
@@ -92,7 +94,7 @@ many cs = Parse $ \_ inp ->
       loc = fwd (location inp) (location inp')
    in This ([Atom loc txt], inp')
 
-string :: (Stream s) => String -> Parse s Texprs
+string :: (Stream s) => Text -> Parse s Texprs
 string str = Parse $ \env inp -> case stripStringPrefix str inp of
   Just inp' ->
     let loc = fwd (location inp) (location inp')
@@ -106,7 +108,7 @@ end = Parse $ \env inp -> case isAtEnd inp of
   False -> unParse (throw explain) env inp
     where explain = (noReason $ location inp){expectingEndOfInput = True}
 
-void :: (Stream s) => String -> Parse s Texprs
+void :: (Stream s) => Text -> Parse s Texprs
 void msg = Parse $ \env inp ->
   let explain = (noReason $ location inp){unexpected = Set.singleton msg}
    in unParse (throw explain) env inp
@@ -147,7 +149,7 @@ flat g = do
 asUnit :: (Stream s) => Rule -> Parse s Texprs
 asUnit g = parse g `mapErr` \err -> err{prior = []}
 
-expect :: (Stream s) => Rule -> String -> Parse s Texprs
+expect :: (Stream s) => Rule -> Text -> Parse s Texprs
 expect g msg = do
   inp0 <- getInput
   parse g `mapErr` \err -> Err
@@ -172,7 +174,7 @@ call f args = lookupLocal f >>= \case
 capture :: (Stream s) => ParamName -> Rule -> Rule -> Parse s Texprs
 capture x g1 g2 = do
   ts1 <- parse g1
-  let action' = withCapture x (unparse `concatMap` ts1) (parse g2)
+  let action' = withCapture x (mconcat $ unparse <$> ts1) (parse g2)
   ts2 <- action' `mapErr` \err -> err{prior = ts1 <> err.prior}
   pure $ ts1 <> ts2
 

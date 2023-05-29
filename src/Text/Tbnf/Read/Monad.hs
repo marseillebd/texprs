@@ -27,6 +27,7 @@ import Data.List (intercalate)
 import Data.Map (Map)
 import Data.Set (Set)
 import Data.Texpr (Texprs,Texpr,CtorName)
+import Data.Text (Text)
 import Data.These (These(..))
 import Text.Location (Position,FwdRange,fwd)
 import Text.Tbnf.Tree (Rule(..),RuleName,ParamName,paramNameFromRuleName)
@@ -42,7 +43,7 @@ newtype Parse s a = Parse { unParse :: Env -> s -> These (a, s) (ReaderError s) 
 data Env = Env
   { global :: Map RuleName ([ParamName], Rule)
   , local :: Map ParamName Rule
-  , captures :: Map ParamName String
+  , captures :: Map ParamName Text
   }
   deriving (Show)
 
@@ -98,7 +99,7 @@ throw reason = Parse $ \_ remaining -> That $
 withCall :: (Stream s) => Map ParamName Rule -> Parse s a -> Parse s a
 withCall local action = Parse $ \env inp -> unParse action env{local,captures=Map.empty} inp
 
-withCapture :: (Stream s) => ParamName -> String -> Parse s a -> Parse s a
+withCapture :: (Stream s) => ParamName -> Text -> Parse s a -> Parse s a
 withCapture x v action = Parse $ \env inp ->
   let env' = env{captures = Map.insert x v env.captures}
    in unParse action env' inp
@@ -111,7 +112,7 @@ lookupLocal x0 = case paramNameFromRuleName x0 of
   Nothing -> pure Nothing
   Just x -> Parse $ \env inp -> This (Map.lookup x env.local, inp)
 
-lookupCapture :: (Stream s) => ParamName -> Parse s (Maybe String)
+lookupCapture :: (Stream s) => ParamName -> Parse s (Maybe Text)
 lookupCapture x = Parse $ \env inp -> This (Map.lookup x env.captures, inp)
 
 
@@ -132,10 +133,10 @@ class Stream s where
   -- | Take as many characters as possible off the beginning of the input as
   -- long as those characters are all in the given 'CharSet' stream; return
   -- them and the remaining input stream.
-  takeChars :: CharSet -> s -> (String, s)
+  takeChars :: CharSet -> s -> (Text, s)
   -- | If the input stream begins with the given string, return the remaining
   -- input after that prefix.
-  stripStringPrefix :: String -> s -> Maybe s
+  stripStringPrefix :: Text -> s -> Maybe s
   -- | If the input stream begins with a 'Texpr', return it along with the
   -- remaining input stream.
   takeTexpr :: s -> Maybe (Texpr, s)
@@ -166,10 +167,10 @@ data Reason = Reason
   { expectAt :: Position
   , expectingEndOfInput :: Bool
   , expectingChars :: CharSet
-  , expectingKeywords :: Set String
+  , expectingKeywords :: Set Text
   , expectingCtors :: Set CtorName
-  , expectingByName :: Map String Reason
-  , unexpected :: Set String
+  , expectingByName :: Map Text Reason
+  , unexpected :: Set Text
   }
 
 -- | Give no explanation for why an error occurred.

@@ -21,9 +21,12 @@ import Data.Char (chr)
 import Data.List (partition,uncons)
 import Data.String (fromString)
 import Data.Texpr (Texpr(..),Texprs)
+import Data.Text (Text)
 import Text.Location (Position(..),Range(..),FwdRange,toFwd,fromFwd)
 import Text.Tbnf (compile,CompiledTbnf,RuleName,ParamName)
 import Text.Tbnf (Tbnf(..),Rule(..),SatClass(..),CharClass(..))
+
+import qualified Data.Text as T
 
 ------ Generated Base Grammar  ------
 
@@ -44,7 +47,7 @@ tbnf = Tbnf {start = Nothing, rules = [(Fwd (Range {anchor = Pos {nChars = 1496,
 
 ------ Cleanup ------
 
-pattern Kw :: String -> Texpr
+pattern Kw :: Text -> Texpr
 pattern Kw str <- Atom _ str
 
 -- | Eliminates unnecessary nodes (whitespace, keywords, &c) from a TBNF parse
@@ -120,7 +123,7 @@ parseStartDef :: Texprs -> StartDef
 parseStartDef [] = Nothing
 parseStartDef [t] = Just $ go t
   where
-  go (Combo l "def-start" [Atom _ name]) = (l, fromString name)
+  go (Combo l "def-start" [Atom _ name]) = (l, fromString $ T.unpack name)
   go _ = error "internal Tbnf grammar error"
 parseStartDef _ = error "internal Tbnf grammar error"
 
@@ -142,11 +145,11 @@ parseRuleDef (Combo l "def-rule" [binder,body]) = (l, parseRuleBinder binder, pa
 parseRuleDef _ = error "internal Tbnf grammar error"
 
 parseRuleBinder :: Texpr -> (FwdRange, RuleName, [ParamName])
-parseRuleBinder (Atom l str) = (l, fromString str, [])
+parseRuleBinder (Atom l str) = (l, fromString $ T.unpack str, [])
 parseRuleBinder (Combo l "rule-parametric" (f:params)) =
   (l, fromName f, fromName <$> params)
   where
-  fromName (Atom _ str) = fromString str
+  fromName (Atom _ str) = fromString $ T.unpack str
   fromName _  = error "internal Tbnf grammar error"
 parseRuleBinder _ = error "internal Tbnf grammar error"
 
@@ -156,14 +159,14 @@ parseRule (Combo l "rule-alt" ts) = Alt l $ loop ts
   loop [t] = [parseRule t]
   loop (a:Kw "|":rest) = parseRule a : loop rest
   loop _ = error "internal Tbnf grammar error"
-parseRule (Combo l "rule-call" (Atom _ f : args)) = Call l (fromString f) (parseRule <$> args)
+parseRule (Combo l "rule-call" (Atom _ f : args)) = Call l (fromString $ T.unpack f) (parseRule <$> args)
 parseRule (Combo l "rule-capture" [(Atom _ name), capture, scope])
-    = Cap l (fromString name) (parseRule capture) (parseRule scope)
+    = Cap l (fromString $ T.unpack name) (parseRule capture) (parseRule scope)
 parseRule (Combo l "rule-char" [c]) = Char l $ parseChar c
-parseRule (Combo _ "rule-combo" [Atom l ctor]) = TexprCombo l (fromString ctor)
-parseRule (Combo _ "rule-ctor" [Atom l ctor, g]) = Ctor l (fromString ctor) $ parseRule g
+parseRule (Combo _ "rule-combo" [Atom l ctor]) = TexprCombo l (fromString $ T.unpack ctor)
+parseRule (Combo _ "rule-ctor" [Atom l ctor, g]) = Ctor l (fromString $ T.unpack ctor) $ parseRule g
 parseRule (Combo l "rule-end" []) = End l
-parseRule (Combo l "rule-expect" (g : msg)) = Expect l (parseRule g) (concatMap parseStr msg)
+parseRule (Combo l "rule-expect" (g : msg)) = Expect l (parseRule g) (T.pack $ concatMap parseStr msg)
 parseRule (Combo l "rule-flat" [g]) = Flat l $ parseRule g
 parseRule (Combo _ "rule-group" [g]) = parseRule g
 parseRule (Combo l "rule-rep" [g, amt]) = Rep l (parseRule g) (parseAmount amt)
@@ -179,12 +182,12 @@ parseRule (Combo l "rule-rep" [g, amt]) = Rep l (parseRule g) (parseAmount amt)
   parseAmount (Combo _ "rep-custom" [t1, Kw ",", t2]) = (parseInt t1, Just $ parseInt t2)
   parseAmount _ = error "internal Tbnf grammar error"
   parseInt :: Texpr -> Int
-  parseInt (Atom _ n) = read n
+  parseInt (Atom _ n) = read (T.unpack n)
   parseInt _ = error "internal Tbnf grammar error"
 parseRule (Combo l "rule-sat" ts) = Sat l $ parseSatClass <$> ts
 parseRule (Combo l "rule-sat-neg" ts) = SatNeg l $ parseSatClass <$> ts
 parseRule (Combo l "rule-seq" ts) = Seq l $ parseRule <$> ts
-parseRule (Combo l "rule-string" ts) = Str l $ concatMap parseStr ts
+parseRule (Combo l "rule-string" ts) = Str l (T.pack $ concatMap parseStr ts)
 parseRule (Combo l "rule-void" [Atom _ msg]) = Void l msg
 parseRule _ = error "internal Tbnf grammar error"
 
@@ -192,8 +195,8 @@ parseSatClass :: Texpr -> SatClass
 parseSatClass = \case
   Combo l "sat-char" [c] -> SatChar l (parseChar c)
   Combo l "sat-range" [lo, hi] -> SatRange l (parseChar lo) (parseChar hi)
-  Combo l "sat-var" [Atom _ name] -> SatVar l (fromString name)
-  Atom l cs -> SatSet l cs
+  Combo l "sat-var" [Atom _ name] -> SatVar l (fromString $ T.unpack name)
+  Atom l cs -> SatSet l (T.unpack cs)
   _ -> error "internal Tbnf grammar error"
 
 ------ Character Classes ------
@@ -210,7 +213,7 @@ parseClasses defs =
   isClassDef _ = False
 
 parseClass :: Texpr -> (FwdRange, (FwdRange, RuleName), CharClass)
-parseClass (Combo l "def-class" (Atom xLoc x:body)) =
+parseClass (Combo l "def-class" (Atom xLoc (T.unpack -> x) : body)) =
   (l, (xLoc, fromString x), parseClassBody body)
 parseClass _ = error "internal Tbnf grammar error"
 
@@ -227,7 +230,7 @@ parseClassBody = loop . reverse
 
 parseClassTerm :: Texpr -> CharClass
 parseClassTerm t = case t of
-  Combo l "class-var" [Atom _ name] -> ClassVar l (fromString name)
+  Combo l "class-var" [Atom _ (T.unpack -> name)] -> ClassVar l (fromString name)
   Combo l "class-char" [c] -> ClassChar l (parseChar c)
   Combo l "class-range" [lo, hi] -> ClassRange l (parseChar lo) (parseChar hi)
   Combo l "class-set" elems -> ClassSet l (concatMap parseStr elems)
@@ -236,8 +239,8 @@ parseClassTerm t = case t of
 ------ Utility Parsers ------
 
 parseChar :: Texpr -> Char
-parseChar (Atom _ [c]) = c
-parseChar (Combo _ "char-escape" [Atom _ ['\\',c]]) = case c of
+parseChar (Atom _ (T.unpack -> [c])) = c
+parseChar (Combo _ "char-escape" [Atom _ (T.unpack -> ['\\',c])]) = case c of
   '0' -> '\NUL'
   'a' -> '\a'
   'b' -> '\b'
@@ -248,7 +251,7 @@ parseChar (Combo _ "char-escape" [Atom _ ['\\',c]]) = case c of
   't' -> '\t'
   'v' -> '\v'
   _ -> error "internal Tbnf grammar error"
-parseChar (Combo _ "char-escape" [Atom _ kw, Atom _ str]) = case kw of
+parseChar (Combo _ "char-escape" [Atom _ kw, Atom _ (T.unpack -> str)]) = case kw of
   "\\x" -> chr $ read ("0x" ++ str)
   "\\u" -> chr $ read ("0x" ++ str)
   "\\U" -> chr $ read ("0x" ++ str)
@@ -257,6 +260,6 @@ parseChar (Combo _ "char-escape" [Atom _ kw, Atom _ str]) = case kw of
 parseChar t = error $ "internal Tbnf grammar error: parseChar " ++ show t
 
 parseStr :: Texpr -> String
-parseStr (Atom _ str) = str
+parseStr (Atom _ str) = T.unpack str
 parseStr t@(Combo _ "char-escape" _) = [parseChar t]
 parseStr _ = error "internal Tbnf grammar error"
