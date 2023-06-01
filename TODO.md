@@ -29,6 +29,8 @@
     - [x] output short form texpr
     - [x] render errors nicely
     - [ ] render errors even more nicely
+  - [ ] allow subtraction in char classes
+    - [ ] and also, tidy up that syntax pLEASE!
   - [ ] primitive grammars
     - 6 columns: Tree.hs, Monad.hs, Define.hs, Compile.hs, Bootstrap.hs, tbnf.tbnf
     - [x][x][x][x][x][x] shallow Texpr Combo

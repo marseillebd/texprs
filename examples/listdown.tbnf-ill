@@ -1,0 +1,26 @@
+start = item<""> $
+
+:inline.char: = '\x20'..'\U10FFFF' - "[]"
+:url.char: = 'a'..'z' | 'A'..'Z' | '0'..'9' | "$-_.+!*'" | "/&?=:%"
+
+item<indent> = item:
+  /indent '-' ' '/
+  (tag: ':' tag.name ':' ' ')?
+  (status: '[' /[:inline.char: ^ ']']*/ ']' ' ')?
+  (text: text.multiline<indent>)
+  ('\n' | $)
+  (children: item</indent "  "/>*)
+
+text.part.inline<plaintext>
+  = plain: /plaintext/
+  | wikilink: "[[" /:inline.char:*/ "]]"
+  | link: '[' /:inline.char:*/ ']' '(' /:url.char:*/ ')'
+  | plain: ['[' ']']
+text.part.break<indent>
+  = /'\n' indent "  "/ text.part.inline<[:inline.char: ^ '-'] :inline.char:*>
+text.part = text.part.inline<:inline.char:+>*
+text.multiline<indent> =
+  # for some reason, these have to come up in this order, even though their prefixes are distinct 😵‍💫
+  (text.part.break<indent> | text.part)*
+
+tag.name = /[:inline.char: ^ ':']*/

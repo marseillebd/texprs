@@ -18,13 +18,11 @@ module Text.Tbnf.Tree
   , paramNameFromRuleName
   ) where
 
-import Control.Monad (forM_,when)
-import Data.Char (isAscii,isAlphaNum,isDigit)
+import Control.Monad (forM_)
 import Data.CharSet (CharSet)
-import Data.List (isPrefixOf,intercalate)
 import Data.Map (Map)
 import Data.String (IsString(..))
-import Data.Texpr (CtorName)
+import Data.Texpr (CtorName,ctorNameFromString)
 import Data.Text (Text)
 
 import qualified Data.Text as T
@@ -91,10 +89,15 @@ fromSeq g = [g]
 ------------------ Special Names ------------------
 
 -- | A newtype restricting the format of parameter name strings.
--- Specifically, parameter names should be simple identifiers.
+-- Specifically, parameter names should be simple identifiers allowing internal dashes.
 -- Formally, they must match the regex:
 --
--- >  [a-zA-Z_][a-zA-Z0-9_]*
+-- >  [a-zA-Z_][a-zA-Z0-9_]*(-[a-zA-Z_][a-zA-Z0-9_]*)*
+--
+-- Or, using tbnf:
+--
+-- >  start = ident-simple ('-' ident-simple)*
+-- >  ident-simple = [a-zA-Z_][a-zA-Z0-9_]*
 newtype ParamName = ParamName { unParamName :: Text }
   deriving (Eq, Ord)
 instance Show ParamName where
@@ -107,20 +110,24 @@ instance IsString ParamName where
 -- | Convert a string to a 'ParamName' if the input is valid.
 paramNameFromString :: String -> Maybe ParamName
 paramNameFromString str = do
-  when (null str) Nothing
-  when (isDigit $ head str) Nothing
-  when (not $ all isIdChar str) Nothing
-  pure $ ParamName $ T.pack str
+  ParamName . T.pack <$> identSimpleFromString str
 
 -- | Convert a 'ParamName' back into a plain string.
 paramNameToString :: ParamName -> String
 paramNameToString = T.unpack . unParamName
 
 -- | A newtype restricting the format of rule name strings.
--- Specifically, rule names should be dot-separated identifiers.
+-- Specifically, rule names should be dot-separated identifiers,
+-- where identifiers may contain internal dashes.
 -- Formally, they must match the regex:
 --
--- >  [a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*
+-- >  [a-zA-Z_][a-zA-Z0-9_]*(-[a-zA-Z_][a-zA-Z0-9_]*)*(\.[a-zA-Z_][a-zA-Z0-9_]*(-[a-zA-Z_][a-zA-Z0-9_]*)*)*
+--
+-- Or, using tbnf:
+--
+-- >  start = ident ('.' ident)*
+-- >  ident = ident-simple ('-' ident-simple)*
+-- >  ident-simple = [a-zA-Z_][a-zA-Z0-9_]*
 newtype RuleName = RuleName { unRuleName :: Text }
   deriving (Eq, Ord)
 instance Show RuleName where
@@ -133,28 +140,29 @@ instance IsString RuleName where
 -- | Convert a string to a 'RuleName' if the input is valid.
 ruleNameFromString :: String -> Maybe RuleName
 ruleNameFromString str = do
-  when ("." `isPrefixOf` str) Nothing
   parts <- splitDots str
-  forM_ parts $ \part -> do
-    when (isDigit $ head part) Nothing
-    when (not $ all isIdChar part) Nothing
-  pure $ RuleName $ T.pack $ intercalate "." parts
+  forM_ parts $ identSimpleFromString
+  pure $ RuleName $ T.pack str
 
 -- | Convert a 'RuleName' back into a plain string.
 ruleNameToString :: RuleName -> String
 ruleNameToString = T.unpack . unRuleName
 
-isIdChar :: Char -> Bool
-isIdChar c = isAscii c && isAlphaNum c || c == '_'
+identSimpleFromString :: String -> Maybe String
+identSimpleFromString str = ctorNameFromString str >> pure str
 
 splitDots :: String -> Maybe [String]
-splitDots str = case break (=='.') str of
-  ([], _:_) -> Nothing
-  (_, '.':[]) -> Nothing
-  ([], []) -> Just []
-  (part, []) -> Just [part]
-  (part, '.':str') -> (part :) <$> splitDots str'
-  (_, _:_) -> Nothing
+splitDots [] = Nothing
+splitDots ('.':_) = Nothing
+splitDots str0 = loop str0
+  where
+  loop str = case break (=='.') str of
+    ([], _:_) -> Nothing
+    (_, '.':[]) -> Nothing
+    ([], []) -> Just []
+    (part, []) -> Just [part]
+    (part, '.':str') -> (part :) <$> splitDots str'
+    (_, _:_) -> Nothing
 
 ruleNameFromParamName :: ParamName -> RuleName
 ruleNameFromParamName = RuleName . unParamName

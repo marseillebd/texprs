@@ -131,7 +131,8 @@ Let's begin by defining the smallest possible rules and work up from there.
 
 > Rule.prim
 >   = rule-char: '\'' char.sq '\''
->   | rule-sat: ("[^" | '[') Rule.satisfy.part* ']'
+>   | rule-sat: '[' (pos: Rule.satisfy.part*) ('^' (neg: Rule.satisfy.part*))? ']'
+>   | rule-sat: (pos: (sat-var: enclose.colon<Name.class>))
 >   | rule-string: '\"' chars.dq* '\"'
 >   | rule-end: '$'
 >   | rule-void: '0' colon '\"' chars.dq+ '\"'
@@ -144,11 +145,12 @@ While any character can be given inside single quotes,
 Whitespace inside the brackets is ignored.
 
 > Rule.satisfy.part
->   = sat-range: '\'' char.sq '\'' ".." '\'' char.sq '\''
->   | sat-char: '\'' char.sq '\''
+>   = sat-range: Rule.satisfy.char '-' Rule.satisfy.char
+>   | sat-char: Rule.satisfy.char
 >   | sat-var: enclose.colon<Name.class>
->   | / [:char.brack:]+ /
 >   | lws
+
+> Rule.satisfy.char = [:char.brack:] | '\'' char.sq '\''
 
 More complex grammars are built from these primitives by combination by various operators.
 These operators have a precedence, which we will go through from highest-to-lowest (i.e. smallest-to-largest).
@@ -261,7 +263,7 @@ TODO right now, unescaped is just ASCII, but should probably include Unicode pri
 > :char.sq: = ' '..'~' - "\'\\"
 >
 > chars.dq
->   = /[:char.dq:]+/
+>   = /:char.dq:+/
 >   | char.escape
 > :char.dq: = ' '..'~' - "\"\\"
 >
@@ -272,25 +274,25 @@ Note that simple backslash-digits is not allowed (it can be ambiguous), though `
 Also, we include `\e` for ASCII escape, just because it is common enough in other languages.
 
 > char.escape
->   = char-escape: / '\\' [:char.escape.c:] /
->   | char-escape: "\\x" /[:digit.hex:]{2}/
->   | char-escape: "\\u" /[:digit.hex:]{4}/
+>   = char-escape: / '\\' :char.escape.c: /
+>   | char-escape: "\\x" /:digit.hex:{2}/
+>   | char-escape: "\\u" /:digit.hex:{4}/
 >   | char-escape: "\\U"
->                     / '0' [:digit.hex:]{5}
->                     | "10" [:digit.hex:]{4}
+>                     / '0' :digit.hex:{5}
+>                     | "10" :digit.hex:{4}
 >                     /
->   | char-escape: '\\' [:char.escape.passthru:]
+>   | char-escape: '\\' :char.escape.passthru:
 > :char.escape.c: = "0abefnrtv"
 > :char.escape.passthru: = :ascii.print: - :char.escape.c: - "xuU"
 
 The (unquoted) characters admissible within square brackets are quite different.
 In particular, we've gone a bit overboard disallowing certain characters that
-  wouldn't otherwise cause a problem wit hthe syntax.
+  wouldn't otherwise cause a problem with the syntax.
 However, we thought it best to disallow them to reduce confusion
   by removing some characters that usually have special meaning in regex,
   and ensuring symmetry in the definition
 
-> :char.brack: = :ascii.print: - " []\'\"-:\\"
+> :char.brack: = :ascii.print: - " []\'\"-:\\^"
 
 ### Names
 
@@ -298,16 +300,15 @@ Names appear in a variety of places in the grammar.
 We've collected them here so that one can see at a glance what is allowed.
 Generally, they are alphanumeric strings separated with dots and/or dashes.
 
-> Name.rule = / sep.dot<Name.part> /
+> Name.part = / sep.dash<[:ascii.ident: ^ :digit:] :ascii.ident:*> /
 >
-> Name.param = Name.part
+> Name.ctor = Name.part
 >
 > Name.class = Name.rule
 >
-> # TODO: should this really by separated by dash? seems incongruent
-> Name.ctor = / sep.dash<Name.part> /
+> Name.rule = / sep.dot<Name.part> /
 >
-> Name.part = / [:ascii.alpha: '_'] [:ascii.alpha_num: '_']* /
+> Name.param = Name.part
 
 ### Generic Character Classes
 
@@ -324,9 +325,11 @@ Once grammar libraries/import is implemented, these will be moved to a library.
 > :ascii.alpha.hi: = 'A'..'Z'
 > :ascii.alpha_num: = :ascii.alpha: | :digit:
 
+> :ascii.ident: = :ascii.alpha_num: | '_'
+
 Ah yes, and we also needed decimal natural numbers, which I may as well throw in here.
 
-> num.nat = / [:digit:] [:digit:]* /
+> num.nat = / :digit:+ /
 
 ### General Combinators
 

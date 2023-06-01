@@ -55,7 +55,8 @@ Well, it could stand for many things:
 ## Contribution Notes
 
 If you change the grammar in `tbnf.tbnf`, then uncomment the `print peg` line in `test/Main.hs` and run `cabal run test`.
-This will generate Haskell source code for the grammar that can them be pasted over the contents of `Text.Tbnf.Bootstrap.tbnf`.
+This will generate Haskell source code for the grammar that can them be pasted over the contents of `Text.Tbnf.Bootstrap.Grammar.tbnf`.
+The code is going to end up in the test log file.
 
 If you want my github password,
   run `cabal run tbnf -- -s examples/numbers.tbnf examples/starting_number.tbnf <examples/numbers.in` /jk.

@@ -126,12 +126,13 @@ compileRule st = \case
   Rep _ g (lo, hi) -> do
     g' <- compileRule st g
     pure $ compileRep g' lo hi
-  Sat _ sats -> do
-    cls <- mergeEithers $ compileSatisfy st.classes <$> sats
-    pure $ Tree.Sat cls
-  SatNeg _ sats -> do
-    cls <- mergeEithers $ compileSatisfy st.classes <$> sats
-    pure $ Tree.Sat (CS.complement cls)
+  Sat _ Nothing neg -> do
+    clsNeg <- mergeEithers $ compileSatisfy st.classes <$> neg
+    pure $ Tree.Sat (CS.complement clsNeg)
+  Sat _ (Just pos) neg -> do
+    clsPos <- mergeEithers $ compileSatisfy st.classes <$> pos
+    clsNeg <- mergeEithers $ compileSatisfy st.classes <$> neg
+    pure $ Tree.Sat (clsPos `CS.minus` clsNeg)
   Char _ c -> pure $ Tree.Sat (CS.singleton c)
   Str _ "" -> pure $ Tree.Empty
   Str _ str -> pure $ Tree.Str str

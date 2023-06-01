@@ -52,7 +52,8 @@ _main2 = do
       exitFailure
   if peg1 == peg2
     then print ("^.^" :: String)
-    else exitFailure
+    else putStrLn "Parse from bootstrap and grammar file non-identical" >> exitFailure
+
 
 ------------------------------------
 

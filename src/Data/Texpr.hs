@@ -109,6 +109,11 @@ instance Show Texpr where
 -- Formally, they must match the regex:
 --
 -- >  [a-zA-Z_][a-zA-Z0-9_]*(-[a-zA-Z_][a-zA-Z0-9_]*)*
+--
+-- Or, using tbnf:
+--
+-- >  start = ident-simple ('-' ident-simple)*
+-- >  ident-simple = [a-zA-Z_][a-zA-Z0-9_]*
 newtype CtorName = CtorName { unCtorName :: Text }
   deriving (Eq, Ord)
 instance Show CtorName where

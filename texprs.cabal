@@ -35,6 +35,7 @@ library
     Text.Tbnf.Read.Texpr
     Text.Tbnf.Read.Text
   other-modules:
+    Text.Tbnf.Bootstrap.Grammar
     Text.Tbnf.Compile
     Text.Tbnf.Define
     Text.Tbnf.Read.Monad
