@@ -16,8 +16,8 @@ module Text.Tbnf.Read.Monad
   , lookupGlobal
   , lookupLocal
   , lookupCapture
+  , ErrorState(..)
   , ReaderError(..)
-  , Reason(..)
   , noReason
   ) where
 
@@ -26,7 +26,7 @@ import Data.CharSet (CharSet)
 import Data.List (intercalate)
 import Data.Map (Map)
 import Data.Set (Set)
-import Data.Texpr (Texprs,Texpr,CtorName)
+import Data.Texpr (Texpr,CtorName)
 import Data.Text (Text)
 import Data.These (These(..))
 import Text.Location (Position,FwdRange,fwd)
@@ -38,7 +38,7 @@ import qualified Data.Set as Set
 
 ------ The Monad ------
 
-newtype Parse s a = Parse { unParse :: Env -> s -> These (a, s) (ReaderError s) }
+newtype Parse s a = Parse { unParse :: Env -> s -> These (a, s) (ErrorState s) }
 
 data Env = Env
   { global :: Map RuleName ([ParamName], Rule)
@@ -70,13 +70,13 @@ instance (Stream s) => Monad (Parse s) where
       These ok err' -> These ok (err <> err')
 
 
-catch :: (Stream s) => Parse s a -> Parse s (Either (ReaderError s) a)
+catch :: (Stream s) => Parse s a -> Parse s (Either (ErrorState s) a)
 catch action = Parse $ \env inp -> case unParse action env inp of
   This (ok, inp') -> This (Right ok, inp')
   That err -> These (Left err, inp) err
   These (ok, inp') err -> These (Right ok, inp') err
 
-mapErr :: (Stream s) => Parse s a -> (ReaderError s -> ReaderError s) -> Parse s a
+mapErr :: (Stream s) => Parse s a -> (ErrorState s -> ErrorState s) -> Parse s a
 mapErr action f = Parse $ \env inp -> second f $ unParse action env inp
 
 getInput :: (Stream s) => Parse s s
@@ -92,9 +92,9 @@ withRange action = do
   p' <- getPosition
   pure (fwd p0 p', x)
 
-throw :: (Stream s) => Reason -> Parse s a
+throw :: (Stream s) => ReaderError -> Parse s a
 throw reason = Parse $ \_ remaining -> That $
-  Err { prior = [], reason, remaining }
+  Err { reason, remaining }
 
 withCall :: (Stream s) => Map ParamName Rule -> Parse s a -> Parse s a
 withCall local action = Parse $ \env inp -> unParse action env{local,captures=Map.empty} inp
@@ -146,14 +146,14 @@ class Stream s where
 ------------------ Errors ------------------
 
 -- | Report an error while reading input.
-data ReaderError s = Err
-  { prior :: Texprs -- ^ texprs that had been successfully created (but not necessarily placed into a tree)
-  , reason :: Reason -- ^ explain why the error occurred (i.e. what was expected or unexpected?)
+-- For internal use during parsing.
+data ErrorState s = Err
+  { reason :: ReaderError -- ^ explain why the error occurred (i.e. what was expected or unexpected?)
   , remaining :: s -- ^ input remaining after error
   }
   deriving (Show)
 
-instance (Stream s) => Semigroup (ReaderError s) where
+instance (Stream s) => Semigroup (ErrorState s) where
   a <> b = case location a.remaining `compare` location b.remaining of
     GT -> a
     EQ -> a{reason = a.reason <> b.reason}
@@ -162,21 +162,21 @@ instance (Stream s) => Semigroup (ReaderError s) where
 -- | Explanation for why a 'ReaderError' occurred.
 -- I.e. what input was expected or unexpected at what position?
 --
--- The 'Semigroup' for 'Reason' prefers reasons that are further in the input.
-data Reason = Reason
+-- The 'Semigroup' for 'ReaderError' prefers reasons that are further in the input.
+data ReaderError = ReaderError
   { expectAt :: Position
   , expectingEndOfInput :: Bool
   , expectingChars :: CharSet
   , expectingKeywords :: Set Text
   , expectingCtors :: Set CtorName
-  , expectingByName :: Map Text Reason
+  , expectingByName :: Map Text ReaderError
   , unexpected :: Set Text
   }
 
 -- | Give no explanation for why an error occurred.
 -- This is used as a base value that can be modified to add expected/unexpected input.
-noReason :: Position -> Reason
-noReason expectAt = Reason
+noReason :: Position -> ReaderError
+noReason expectAt = ReaderError
   { expectAt
   , expectingEndOfInput = False
   , expectingChars = CS.empty
@@ -186,7 +186,7 @@ noReason expectAt = Reason
   , unexpected = Set.empty
   }
 
-instance Show Reason where
+instance Show ReaderError where
   show r = concat
     [ "(noReason "
     , show r.expectAt
@@ -201,10 +201,10 @@ instance Show Reason where
     , "}"
     ]
 
-instance Semigroup Reason where
+instance Semigroup ReaderError where
   a <> b = case a.expectAt `compare` b.expectAt of
     GT -> a
-    EQ -> Reason
+    EQ -> ReaderError
       { expectAt = a.expectAt
       , expectingEndOfInput = a.expectingEndOfInput || b.expectingEndOfInput
       , expectingChars = a.expectingChars <> b.expectingChars

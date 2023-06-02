@@ -4,7 +4,7 @@
 
 - FIXES:
 - CLEANUP:
-  - [ ] use what is now `Reason` as `ReaderError`, rename `ReaderError` to something else
+  - [x] use what is now `Reason` as `ReaderError`, rename `ReaderError` to something else
   - [ ] move (de)serializers from Main
   - [ ] better readme
   - [ ] try to remove T.pack/unpack as much as possible
@@ -29,8 +29,8 @@
     - [x] output short form texpr
     - [x] render errors nicely
     - [ ] render errors even more nicely
-  - [ ] allow subtraction in char classes
-    - [ ] and also, tidy up that syntax pLEASE!
+  - [x] allow subtraction in char classes
+    - [x] and also, tidy up that syntax pLEASE!
   - [ ] primitive grammars
     - 6 columns: Tree.hs, Monad.hs, Define.hs, Compile.hs, Bootstrap.hs, tbnf.tbnf
     - [x][x][x][x][x][x] shallow Texpr Combo
@@ -48,12 +48,15 @@
       - returns the parsed value of the first
       - the following ones must match the text the first parsed
     - [ ][ ][ ][ ][ ][ ] Any (char or texpr)
+    - [ ][ ][ ][ ][ ][ ] empty sequence
     - [ ][ ][ ][ ][ ][ ] Lookahead
     - [ ][ ][ ][ ][ ][ ] Repeat-Until
   - [ ] simplify/optimize the rules
+    - [ ] match many chars in flat mode
     - [ ] un-nest seq and alt
     - [ ] eliminate identity elements for seq and alt
-  - [?] extend rules and sets
+    - [ ] trim away unused rules
+  - [ ] extend rules and sets
   - [ ] import grammars
 - TESTING:
   - [ ] implement autotab with autotab.tbnf
@@ -64,6 +67,7 @@
 - [ ] texpr rewriter language
   - [ ] define a textual grammar for rewriters
   - [x] the match/rewrite algorithm
+
 
 ## Use Texprs/Trwl
 

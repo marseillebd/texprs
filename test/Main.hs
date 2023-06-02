@@ -12,7 +12,7 @@ import Data.Tree.Match (Pattern)
 import Data.Tree.Template (Template)
 import System.Exit (exitFailure)
 import Text.Location.String (startInput)
-import Text.Tbnf.Read.String (runReader,prior,reason)
+import Text.Tbnf.Read.String (runReader)
 
 import qualified Data.Tree.Match as Match
 import qualified Data.Tree.Template as Template
@@ -36,8 +36,7 @@ _main2 = do
         Right g -> pure g
         Left e -> print e >> exitFailure
     Left e -> do
-      print e.prior
-      pPrint e.reason
+      pPrint e
       exitFailure
   peg2 <- case runReader peg1 (startInput selfGrammar) of
     Right (ts0, _) -> do
@@ -47,8 +46,7 @@ _main2 = do
         Right g -> pure g
         Left e -> print e >> exitFailure
     Left e -> do
-      print (prior e)
-      pPrint (reason e)
+      pPrint e
       exitFailure
   if peg1 == peg2
     then print ("^.^" :: String)

@@ -12,13 +12,12 @@ module Text.Tbnf.Read.Texpr
   ( runReader
   , Input(..)
   , ReaderError(..)
-  , Reason(..)
   )
   where
 
 import Data.Texpr (Texprs)
 import Text.Location (Position,startPosition)
-import Text.Tbnf.Read.Generic (Stream(..),ReaderError(..),Reason(..))
+import Text.Tbnf.Read.Generic (Stream(..),ReaderError(..))
 import Text.Tbnf.Tree (CompiledTbnf)
 
 import qualified Text.Tbnf.Read.Generic as Monad
@@ -28,7 +27,7 @@ import qualified Text.Tbnf.Read.Generic as Monad
 runReader ::
      CompiledTbnf
   -> Texprs -- ^ input
-  -> Either (ReaderError Input) (Texprs, Input) -- ^ result with remaining input
+  -> Either ReaderError (Texprs, Input) -- ^ result with remaining input
 runReader tbnf ts = Monad.runReader tbnf inp
   where
   inp = Input startPosition ts

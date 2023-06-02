@@ -1,7 +1,7 @@
 module Text.Tbnf.IO
   ( readFile
   -- , readFileWith
-  , ReaderError, prior, reason, remaining
+  , ReaderError(..)
   , CompileError(..)
   , fromString
   ) where
@@ -10,7 +10,7 @@ import Prelude hiding (readFile)
 
 import Text.Location.String (startInput)
 import Text.Tbnf (CompiledTbnf,CompileError(..))
-import Text.Tbnf.Read.String (ReaderError,prior,reason,remaining)
+import Text.Tbnf.Read.String (ReaderError(..))
 
 import qualified Prelude as Prelude
 import qualified Text.Tbnf as Tbnf

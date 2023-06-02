@@ -9,17 +9,13 @@
 module Text.Tbnf.Read.Text
   ( runReader
   , Input(..)
-  , ReaderError
-  , Monad.prior
-  , Monad.reason
-  , Monad.remaining
-  , Reason(..)
+  , ReaderError(..)
   ) where
 
 import Control.Monad (when)
 import Data.Texpr (Texprs)
 import Text.Location.Text (Input(..))
-import Text.Tbnf.Read.Generic (Stream(..),Reason(..))
+import Text.Tbnf.Read.Generic (Stream(..),ReaderError(..))
 import Text.Tbnf.Tree (CompiledTbnf)
 
 import qualified Data.CharSet as CS
@@ -34,8 +30,6 @@ runReader ::
   -> Input -- ^ input
   -> Either ReaderError (Texprs, Input) -- ^ result with remaining input
 runReader = Monad.runReader
-
-type ReaderError = Monad.ReaderError Input
 
 instance Stream Input where
   location = (.loc)

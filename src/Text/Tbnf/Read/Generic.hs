@@ -23,7 +23,6 @@
 module Text.Tbnf.Read.Generic
   ( runReader
   , ReaderError(..)
-  , Reason(..)
   , noReason
   , Stream(..)
   ) where
@@ -49,10 +48,10 @@ import qualified Data.Text as T
 runReader :: (Stream s)
   => CompiledTbnf
   -> s -- ^ input
-  -> Either (ReaderError s) (Texprs, s) -- ^ result with remaining input
+  -> Either ReaderError (Texprs, s) -- ^ result with remaining input
 runReader tbnf inp0 = case go of
   This ok -> Right ok
-  That err -> Left err
+  That err -> Left err.reason
   These ok _ -> Right ok
   where
   go = unParse (parse tbnf.startRule) env0 inp0
@@ -120,10 +119,7 @@ alternate g1 g2 = do
     Left err1 -> parse g2 `mapErr` (err1 <>)
 
 sequence :: (Stream s) => Rule -> Rule -> Parse s Texprs
-sequence g1 g2 = do
-  ts1 <- parse g1
-  ts2 <- parse g2 `mapErr` \err -> err{prior = ts1 <> err.prior}
-  pure $ ts1 <> ts2
+sequence g1 g2 = (<>) <$> parse g1 <*> parse g2
 
 star :: (Stream s) => Rule -> Parse s Texprs
 star g = do
@@ -134,7 +130,7 @@ star g = do
       inp' <- getInput
       if location inp' == location inp0
         then pure [] -- to prevent infinite loops when the repeated grammar accepts empty
-        else (ts <>) <$> mapErr (star g) (\err -> err{prior = ts <> err.prior})
+        else (ts <>) <$> star g
 
 ctor :: (Stream s) => CtorName -> Rule -> Parse s Texprs
 ctor name g = do
@@ -147,14 +143,13 @@ flat g = do
   pure $ maybeToList (flatten ts)
 
 asUnit :: (Stream s) => Rule -> Parse s Texprs
-asUnit g = parse g `mapErr` \err -> err{prior = []}
+asUnit g = parse g
 
 expect :: (Stream s) => Rule -> Text -> Parse s Texprs
 expect g msg = do
   inp0 <- getInput
   parse g `mapErr` \err -> Err
-    { prior = []
-    , remaining = inp0
+    { remaining = inp0
     , reason = (noReason $ location inp0)
                 {expectingByName = Map.singleton msg err.reason}
     }
@@ -175,7 +170,7 @@ capture :: (Stream s) => ParamName -> Rule -> Rule -> Parse s Texprs
 capture x g1 g2 = do
   ts1 <- parse g1
   let action' = withCapture x (mconcat $ unparse <$> ts1) (parse g2)
-  ts2 <- action' `mapErr` \err -> err{prior = ts1 <> err.prior}
+  ts2 <- action'
   pure $ ts1 <> ts2
 
 replay :: (Stream s) => ParamName -> Parse s Texprs

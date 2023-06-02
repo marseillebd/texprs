@@ -26,6 +26,7 @@ import Text.Location (Position(..),FwdRange,maybeFwd,verbosePos)
 import Text.Location.Text (startInput)
 import Text.ParserCombinators.ReadP (ReadP,readP_to_S)
 import Text.Tbnf (CompiledTbnf)
+import Text.Tbnf.Read.Texpr (ReaderError)
 
 import qualified Data.CharSet as CS
 import qualified Data.Map as Map
@@ -112,13 +113,13 @@ main = do
         Tbnf.readFile file >>= \case
           Right g -> pure $ Parse g
           Left (Left err) ->
-            hPutStrLn stderr (renderError (Just file) err.reason) >> exitFailure
+            hPutStrLn stderr (renderError (Just file) err) >> exitFailure
           Left (Right err) -> hPrint stderr err >> exitFailure -- TODO print this much more nicely thanks!
       | ".tbnf-ill" `isSuffixOf` file -> do
         (Tbnf.fromString . unlines . map ("> " <>) . lines) <$> readFile file >>= \case
           Right g -> pure $ Parse g
           Left (Left err) ->
-            hPutStrLn stderr (renderError (Just file) err.reason) >> exitFailure
+            hPutStrLn stderr (renderError (Just file) err) >> exitFailure
           Left (Right err) -> hPrint stderr err >> exitFailure -- TODO print this much more nicely thanks!
       | otherwise -> do
         hPutStrLn stderr $ "unrecognized file extension on file " ++ show file
@@ -134,10 +135,10 @@ main = do
     Parse g -> \case
       StrAcc str -> case Text.runReader g (startInput str) of
         Right (ts, _) -> pure $ TexprAcc ts
-        Left err -> hPutStrLn stderr (renderError Nothing err.reason) >> exitFailure
+        Left err -> hPutStrLn stderr (renderError Nothing err) >> exitFailure
       TexprAcc ts -> case Texpr.runReader g ts of
         Right (ts', _) -> pure $ TexprAcc ts'
-        Left err -> hPutStrLn stderr (renderError Nothing err.reason) >> exitFailure
+        Left err -> hPutStrLn stderr (renderError Nothing err) >> exitFailure
   ts <- case r of
     StrAcc _ -> error "tbnf pipeline failed to produce texprs"
     TexprAcc ts -> pure ts
@@ -203,33 +204,33 @@ iso2047 =
 -- TODO use a pretty-printer
 renderError ::
      Maybe FilePath
-  -> Text.Reason
+  -> ReaderError
   -> String
-renderError fileName reason =
+renderError fileName err =
   let locLine = concat
         [ "Read error"
         , case fileName of
             Nothing -> " at "
             Just it -> " in file \'" ++ it ++ "\', "
-        , verbosePos reason.expectAt
+        , verbosePos err.expectAt
         ]
       expectations = intercalate ", " $ concat
-        [ Map.assocs reason.expectingByName <&> \(name, _) -> T.unpack name -- TODO show subreason
-        , if CS.null reason.expectingChars then [] else
-            ["one of the characters " ++ CS.render reason.expectingChars]
-        , if null reason.expectingKeywords then [] else
+        [ Map.assocs err.expectingByName <&> \(name, _) -> T.unpack name -- TODO show subreason
+        , if CS.null err.expectingChars then [] else
+            ["one of the characters " ++ CS.render err.expectingChars]
+        , if null err.expectingKeywords then [] else
             [  "one of the strings "
-            ++ intercalate ", " (fmap show $ Set.toList reason.expectingKeywords)
+            ++ intercalate ", " (fmap show $ Set.toList err.expectingKeywords)
             ]
-        , if null reason.expectingCtors then [] else
+        , if null err.expectingCtors then [] else
             [  "a texpr with one of the constructors "
-            ++ intercalate ", " (ctorNameToString <$> Set.toList reason.expectingCtors)
+            ++ intercalate ", " (ctorNameToString <$> Set.toList err.expectingCtors)
             ]
-        , if not reason.expectingEndOfInput then []
+        , if not err.expectingEndOfInput then []
             else ["end of input"]
         ]
-      unexpectations = if Set.null reason.unexpected then ""
-        else intercalate ", " (fmap show $ Set.toList reason.unexpected)
+      unexpectations = if Set.null err.unexpected then ""
+        else intercalate ", " (fmap show $ Set.toList err.unexpected)
    in concat
       [ locLine
       , ":"
