@@ -32,7 +32,7 @@
   - [x] allow subtraction in char classes
     - [x] and also, tidy up that syntax pLEASE!
   - [ ] primitive grammars
-    - 6 columns: Tree.hs, Monad.hs, Define.hs, Compile.hs, Bootstrap.hs, tbnf.tbnf
+    - 6 columns: Tree.hs, Generic.hs, Define.hs, Compile.hs, Bootstrap.hs, tbnf.tbnf
     - [x][x][x][x][x][x] shallow Texpr Combo
       - [x] generalize matching algorithm
       - [x] implement matching on texpr lists
@@ -41,16 +41,16 @@
       - '{' lws* Name.ctor (lws* ':' lws+ Rule.Seq)? lws* '}'
     - [ ][ ][ ][ ][ ][ ] deep Texpr atom
       - '{' lws* ':' lws+ Rule lws* '}'
-    - [ ][ ][ ][ ][ ][ ] Not
-      - takes a message and a rule, fails with message when rule matches
-        otherwise backtracks
     - [ ][ ][ ][ ][ ][ ] Intersect
       - returns the parsed value of the first
       - the following ones must match the text the first parsed
     - [ ][ ][ ][ ][ ][ ] Any (char or texpr)
-    - [ ][ ][ ][ ][ ][ ] empty sequence
-    - [ ][ ][ ][ ][ ][ ] Lookahead
-    - [ ][ ][ ][ ][ ][ ] Repeat-Until
+    - [x] empty sequence
+    - [x] Lookahead
+    - [ ][ ][ ][ ][ ][ ] Not (negative lookahead)
+      - takes a message and a rule, fails with message when rule matches
+        otherwise backtracks
+    - Repeat-Until = (g ?!"msg" g2)*
   - [ ] simplify/optimize the rules
     - [ ] match many chars in flat mode
     - [ ] un-nest seq and alt

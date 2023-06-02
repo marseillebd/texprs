@@ -118,6 +118,7 @@ data CompileRuleState = RuleSt
 compileRule :: CompileRuleState -> Rule -> Either [CompileError] Tree.Rule
 compileRule st = \case
   Alt _ gs -> Tree.Alt <$> compileRule st `mapM` gs
+  Empty _ -> pure Tree.Empty
   Seq _ gs -> Tree.Seq <$> compileRule st `mapM` gs
   Cap _ name capture scope ->
     let st' = st{captures = Set.insert name st.captures}
@@ -126,6 +127,7 @@ compileRule st = \case
   Rep _ g (lo, hi) -> do
     g' <- compileRule st g
     pure $ compileRep g' lo hi
+  Lookahead _ g -> Tree.Lookahead <$> compileRule st g
   Sat _ Nothing neg -> do
     clsNeg <- mergeEithers $ compileSatisfy st.classes <$> neg
     pure $ Tree.Sat (CS.complement clsNeg)

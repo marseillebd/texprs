@@ -31,7 +31,7 @@ _main2 = do
     Right (ts0, _) -> do
       let ts1 = Tbnf.clean ts0
       let peg = Tbnf.parseTbnf ts1
-      -- print peg -- NOTE for replacing the bootstrap grammar with the written grammar
+      print peg -- NOTE for replacing the bootstrap grammar with the written grammar
       case Tbnf.compile peg of
         Right g -> pure g
         Left e -> print e >> exitFailure

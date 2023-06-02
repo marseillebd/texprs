@@ -70,9 +70,9 @@ parse = \case
   Empty -> pure []
   Seq2 g1 g2 -> sequence g1 g2
   Star g -> star g
+  Lookahead g -> lookahead g
   Ctor name g -> ctor name g
   Flat g -> flat g
-  AsUnit g -> asUnit g
   Expect g msg -> expect g msg
   Call f gs -> call f gs
   Capture x g1 g2 -> capture x g1 g2
@@ -132,6 +132,9 @@ star g = do
         then pure [] -- to prevent infinite loops when the repeated grammar accepts empty
         else (ts <>) <$> star g
 
+lookahead :: (Stream s) => Rule -> Parse s Texprs
+lookahead g = restoringInput $ [] <$ parse g
+
 ctor :: (Stream s) => CtorName -> Rule -> Parse s Texprs
 ctor name g = do
   (r, ts) <- withRange $ parse g
@@ -141,9 +144,6 @@ flat :: (Stream s) => Rule -> Parse s Texprs
 flat g = do
   ts <- parse g
   pure $ maybeToList (flatten ts)
-
-asUnit :: (Stream s) => Rule -> Parse s Texprs
-asUnit g = parse g
 
 expect :: (Stream s) => Rule -> Text -> Parse s Texprs
 expect g msg = do
@@ -196,9 +196,9 @@ subst = \case
   Empty -> pure Empty
   Seq2 g1 g2 -> Seq2 <$> subst g1 <*> subst g2
   Star g -> Star <$> subst g
+  Lookahead g -> Lookahead <$> subst g
   Ctor name g -> Ctor name <$> subst g
   Flat g -> Flat <$> subst g
-  AsUnit g -> AsUnit <$> subst g
   Expect g msg -> flip Expect msg <$> subst g
   Call f [] -> lookupLocal f >>= \case
     Just g -> pure g

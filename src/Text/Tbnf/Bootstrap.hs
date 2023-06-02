@@ -73,9 +73,11 @@ cleanKeywords (Combo l ctor ((cleanKeywords <$>) -> ts0)) = Combo l ctor (go cto
   go "rule-combo" [Kw "{", name , Kw "}"] = [name]
   go "rule-commit" [Kw "(", t1, Kw "->", t2, Kw ")"] = [t1, t2]
   go "rule-ctor" (name : Kw ":" : rest) = name:rest
+  go "rule-empty" [Kw "1"] = []
   go "rule-end" [Kw "$"] = []
   go "rule-expect" (rule : Kw "??" : Kw "\"" : (unsnoc -> Just (msg, Kw "\""))) = (rule : msg)
   go "rule-flat" (Kw "/" : (unsnoc -> Just (ts, Kw "/"))) = ts
+  go "rule-lookahead-pos" [Kw "?=", t] = [t]
   go "rule-group" (Kw "(" : (unsnoc -> Just (ts, Kw ")"))) = ts
   go "rule-parametric" (f : Kw "<" : (unsnoc -> Just (ts, Kw ">"))) = f : concatMap cleanComma ts
   go "rule-sat" [Kw "[", pos, Kw "^", neg, Kw "]"] = [pos, neg]
@@ -160,10 +162,12 @@ parseRule (Combo l "rule-capture" [(Atom _ name), capture, scope])
 parseRule (Combo l "rule-char" [c]) = Char l $ parseChar c
 parseRule (Combo _ "rule-combo" [Atom l ctor]) = TexprCombo l (fromString $ T.unpack ctor)
 parseRule (Combo _ "rule-ctor" [Atom l ctor, g]) = Ctor l (fromString $ T.unpack ctor) $ parseRule g
+parseRule (Combo l "rule-empty" []) = Empty l
 parseRule (Combo l "rule-end" []) = End l
 parseRule (Combo l "rule-expect" (g : msg)) = Expect l (parseRule g) (T.pack $ concatMap parseStr msg)
 parseRule (Combo l "rule-flat" [g]) = Flat l $ parseRule g
 parseRule (Combo _ "rule-group" [g]) = parseRule g
+parseRule (Combo l "rule-lookahead-pos" [g]) = Lookahead l $ parseRule g
 parseRule (Combo l "rule-rep" [g, amt]) = Rep l (parseRule g) (parseAmount amt)
   where
   parseAmount :: Texpr -> (Int, Maybe Int)

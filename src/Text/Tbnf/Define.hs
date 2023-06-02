@@ -38,9 +38,11 @@ type RuleDef = (FwdRange, (FwdRange, RuleName, [ParamName]), Rule)
 -- | The abstract syntax of rule bodies.
 data Rule
   = Alt FwdRange [Rule] -- ^ alternation (the @|@ operator)
+  | Empty FwdRange -- ^ empty sequence
   | Seq FwdRange [Rule] -- ^ sequencing
   | Cap FwdRange ParamName Rule Rule -- ^ capture the input matching the first rule, referencable by name within the second
   | Rep FwdRange Rule (Int, Maybe Int) -- ^ repedition operators with lower and upper bounds
+  | Lookahead FwdRange Rule -- ^ match the rule, but don't consume input or generate texpr output
   | Sat FwdRange (Maybe [SatClass]) [SatClass] -- ^ match a single character when it is in a given class -- TODO fix name
   | Char FwdRange Char -- ^ match a single, specific character
   | Str FwdRange Text -- ^ match a specific string (a sequence of specific characters)

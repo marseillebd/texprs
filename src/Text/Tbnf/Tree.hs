@@ -58,9 +58,9 @@ data Rule
   | Empty
   | Seq2 Rule Rule
   | Star Rule
+  | Lookahead Rule
   | Ctor CtorName Rule
   | Flat Rule
-  | AsUnit Rule -- ^ if the rule fails, fail as soon as the rule started (i.e. like an `Expect`, but no new error message)
   | Expect Rule Text
   | Call RuleName [Rule] -- lookup a binding in the current environment and match it
   | Capture ParamName Rule Rule -- i.e. capture string as the text matching Rule₁ and use that binding in Rule₂

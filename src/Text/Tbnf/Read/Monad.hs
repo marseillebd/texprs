@@ -9,6 +9,7 @@ module Text.Tbnf.Read.Monad
   , catch
   , mapErr
   , getInput
+  , restoringInput
   , getPosition
   , withRange
   , withCall
@@ -81,6 +82,12 @@ mapErr action f = Parse $ \env inp -> second f $ unParse action env inp
 
 getInput :: (Stream s) => Parse s s
 getInput = Parse $ \_ inp -> This (inp, inp)
+
+restoringInput :: (Stream s) => Parse s a -> Parse s a
+restoringInput action = Parse $ \env inp -> case unParse action env inp of
+  This (ok, _) -> This (ok, inp)
+  That err -> That err
+  These (ok, _) err -> These (ok, inp) err
 
 getPosition :: (Stream s) => Parse s Position
 getPosition = Parse $ \_ inp -> This (location inp, inp)
