@@ -68,6 +68,8 @@ cleanKeywords (Combo l ctor ((cleanKeywords <$>) -> ts0)) = Combo l ctor (go cto
   go "rep-custom" [Kw "{", lo, comma@(Kw ","), hi, Kw "}"] = [lo, comma, hi]
   go "rep-custom" [Kw "{", lo, comma@(Kw ","), Kw "}"] = [lo, comma]
   go "rule-any" [Kw "."] = []
+  go "rule-atom" [Kw "{", Kw ":", Kw "}"] = []
+  go "rule-atom" [Kw "{", Kw ":", g, Kw "}"] = [g]
   go "rule-call" (f : Kw "<" : (unsnoc -> Just (ts, Kw ">"))) = f : concatMap cleanComma ts
   go "rule-capture" [Kw "@", name, Kw "=", capture, scope] = [name, capture, scope]
   go "rule-char" [Kw "\'", c, Kw "\'"] = [c]
@@ -160,6 +162,8 @@ parseRule (Combo l "rule-alt" ts) = Alt l $ loop ts
   loop (a:Kw "|":rest) = parseRule a : loop rest
   loop _ = error "internal Tbnf grammar error"
 parseRule (Combo l "rule-any" []) = Any l
+parseRule (Combo l "rule-atom" []) = TexprAtom l Nothing
+parseRule (Combo l "rule-atom" [g]) = TexprAtom l (Just $ parseRule g)
 parseRule (Combo l "rule-call" (Atom _ f : args)) = Call l (fromString $ T.unpack f) (parseRule <$> args)
 parseRule (Combo l "rule-capture" [(Atom _ name), capture, scope])
     = Cap l (fromString $ T.unpack name) (parseRule capture) (parseRule scope)

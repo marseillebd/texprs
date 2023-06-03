@@ -222,6 +222,7 @@ renderError fileName err =
             [  "one of the strings "
             ++ intercalate ", " (fmap show $ Set.toList err.expectingKeywords)
             ]
+        , if err.expectingAtom then ["an atomic texpr"] else []
         , if null err.expectingCtors then [] else
             [  "a texpr with one of the constructors "
             ++ intercalate ", " (ctorNameToString <$> Set.toList err.expectingCtors)

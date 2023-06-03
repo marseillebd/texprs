@@ -159,6 +159,7 @@ data ReaderError = ReaderError
   , expectingEndOfInput :: Bool
   , expectingChars :: CharSet
   , expectingKeywords :: Set Text
+  , expectingAtom :: Bool
   , expectingCtors :: Set CtorName
   , expectingByName :: Map Text ReaderError
   , unexpected :: Set Text
@@ -172,6 +173,7 @@ noReason expectAt = ReaderError
   , expectingEndOfInput = False
   , expectingChars = CS.empty
   , expectingKeywords = Set.empty
+  , expectingAtom = False
   , expectingCtors = Set.empty
   , expectingByName = Map.empty
   , unexpected = Set.empty
@@ -186,6 +188,7 @@ instance Show ReaderError where
       [ if r.expectingEndOfInput then ["expectingEndOfInput=True"] else []
       , if CS.null r.expectingChars then [] else ["expectingChars=" <> show r.expectingChars]
       , if Set.null r.expectingKeywords then [] else ["expectingKeywords=" <> show r.expectingKeywords]
+      , if r.expectingAtom then ["expectingAtom=" <> show r.expectingAtom] else []
       , if Set.null r.expectingCtors then [] else ["expectingCtors=" <> show r.expectingCtors]
       , if Map.null r.expectingByName then [] else ["expectingByName=" <> show r.expectingByName]
       ]
@@ -200,6 +203,7 @@ instance Semigroup ReaderError where
       , expectingEndOfInput = a.expectingEndOfInput || b.expectingEndOfInput
       , expectingChars = a.expectingChars <> b.expectingChars
       , expectingKeywords = a.expectingKeywords <> b.expectingKeywords
+      , expectingAtom = a.expectingAtom || b.expectingAtom
       , expectingCtors = a.expectingCtors <> b.expectingCtors
       , expectingByName = Map.unionWith (<>) a.expectingByName b.expectingByName
       , unexpected = a.unexpected <> b.unexpected

@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedRecordDot #-}
@@ -29,6 +30,7 @@ module Text.Tbnf.Read.Generic
   ) where
 
 import {-# SOURCE #-} qualified Text.Tbnf.Read.Texpr as Texpr
+import {-# SOURCE #-} qualified Text.Tbnf.Read.Text as Text
 
 import Prelude hiding (any,fail,sequence)
 
@@ -83,6 +85,7 @@ parse = \case
   Call f gs -> call f gs
   Capture x g1 g2 -> capture x g1 g2
   Replay x -> replay x
+  TexprAtom g -> atom g
   TexprCombo name g -> combo name g
 
 any :: (Stream s) => Parse s Texprs
@@ -125,8 +128,7 @@ end = Parse $ \_ inp -> case isAtEnd inp of
 
 void :: (Stream s) => Text -> Parse s Texprs
 void msg = Parse $ \_ inp ->
-  let explain = (noReason $ location inp){unexpected = Set.singleton msg}
-   in That explain
+  That (noReason $ location inp){unexpected = Set.singleton msg}
 
 alternate :: (Stream s) => Rule -> Rule -> Parse s Texprs
 alternate g1 g2 = do
@@ -199,6 +201,30 @@ replay x = lookupCapture x >>= \case
   Just str -> string str
   Nothing -> errorWithoutStackTrace  $ "internal Texpr-Peg error: unbound capture " ++ show x
 
+atom :: (Stream s) => Maybe Rule -> Parse s Texprs
+atom g_m = Parse $ \env inp -> case takeTexpr inp of
+  Just (t@(Atom l txt), inp') -> case g_m of
+    Nothing -> This ([t], inp')
+    Just g -> case wrapParser g env (Text.Input l.anchor txt) of
+      This ok -> This (ok, inp')
+      That err -> That err
+      These ok err -> These (ok, inp') err
+  _ -> That (noReason $ location inp){expectingAtom = True}
+  where
+  wrapParser :: Rule -> Env -> Text.Input -> These Texprs ReaderError
+  wrapParser g env txt = case unParse (parse g) env txt of
+    This (ok, inp') -> case T.uncons inp'.txt of
+      Nothing -> This ok
+      Just (c, _) -> That $ moreCharsErr c inp'.loc
+    That err -> That err
+    These (ok, inp') err -> case T.uncons inp'.txt of
+      Nothing -> This ok
+      Just (c, _) -> That $ err <> moreCharsErr c inp'.loc
+  moreCharsErr c loc = (noReason loc)
+    { expectingByName = Map.singleton "end of atom" $
+      (noReason loc){unexpected = Set.singleton $ T.singleton c}
+    }
+
 combo :: (Stream s) => CtorName -> Maybe Rule -> Parse s Texprs
 combo name g_m = Parse $ \env inp -> case takeTexpr inp of
   Just (t@(Combo l name' children), inp') | name == name' -> case g_m of
@@ -207,20 +233,14 @@ combo name g_m = Parse $ \env inp -> case takeTexpr inp of
       This ok -> This ([Combo l name' ok], inp')
       That err -> That err
       These ok err -> These ([Combo l name' ok], inp') err
-  _ ->
-    let explain = (noReason $ location inp){expectingCtors = Set.singleton name}
-     in That explain
+  _ -> That (noReason $ location inp){expectingCtors = Set.singleton name}
   where
   wrapParser g env children = case unParse (parse g) env children of
     This (ok, Texpr.Input{Texpr.toks=[]}) -> This ok
-    This (_, Texpr.Input{Texpr.loc}) ->
-      let explain = moreChildrenErr loc
-       in That explain
+    This (_, Texpr.Input{Texpr.loc}) -> That $ moreChildrenErr loc
     That err -> That err
     These (ok, Texpr.Input{Texpr.toks=[]}) err -> These ok err
-    These (_, Texpr.Input{Texpr.loc}) _ ->
-      let explain = moreChildrenErr loc
-       in That explain
+    These (_, Texpr.Input{Texpr.loc}) err -> That $ err <> moreChildrenErr loc
   moreChildrenErr loc = (noReason loc)
     { expectingByName = Map.singleton "end of children" $
       (noReason loc){expectingEndOfInput = True}
@@ -251,4 +271,5 @@ subst = \case
   Replay x -> lookupCapture x >>= \case
     Just txt -> pure $ Str txt
     Nothing -> errorWithoutStackTrace  $ "internal Texpr-Peg error: unbound capture " ++ show x
+  TexprAtom g -> TexprAtom <$> mapM subst g
   TexprCombo name g -> TexprCombo name <$> (mapM subst g)

@@ -156,7 +156,8 @@ compileRule st = \case
         False -> Left [UndefinedRule loc name]
       Nothing -> Left [UndefinedRule loc name]
   Ctor _ name g -> Tree.Ctor name <$> compileRule st g
-  TexprCombo _ name g -> Tree.TexprCombo name <$> (compileRule st `mapM` g)
+  TexprAtom _ g -> Tree.TexprAtom <$> compileRule st `mapM` g
+  TexprCombo _ name g -> Tree.TexprCombo name <$> compileRule st `mapM` g
 
 compileRep :: Tree.Rule -> Int -> Maybe Int -> Tree.Rule
 compileRep !g !n0 Nothing = loop n0

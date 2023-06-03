@@ -31,16 +31,12 @@
     - [ ] render errors even more nicely
   - [x] allow subtraction in char classes
     - [x] and also, tidy up that syntax pLEASE!
-  - [ ] primitive grammars
+  - [x] primitive grammars
     - 6 columns: Tree.hs, Generic.hs, Define.hs, Compile.hs, Bootstrap.hs, tbnf.tbnf
     - [x] shallow Texpr Combo
     - [x] Expect
     - [x] deep Texpr combo
-      - '{' lws* Name.ctor (lws* ':' lws+ Rule.Seq)? lws* '}'
-      - [ ] implement intoTexpr
-    - [ ][ ][ ][ ][ ][ ] deep Texpr atom
-      - '{' lws* ':' lws+ Rule lws* '}'
-      - [ ] implement intoTexpr
+    - [x] deep Texpr atom
     - [x] Any (char or texpr)
     - [x] empty sequence
     - [x] Lookahead
