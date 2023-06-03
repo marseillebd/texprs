@@ -1,6 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ViewPatterns #-}
 
 -- | This module provides tools for defining readers over various types of input
@@ -27,7 +28,7 @@ module Text.Tbnf.Read.Generic
   , Stream(..)
   ) where
 
-import Prelude hiding (fail,sequence)
+import Prelude hiding (any,fail,sequence)
 
 import Text.Tbnf.Read.Monad
 
@@ -39,6 +40,7 @@ import Data.These (These(..))
 import Text.Location (fwd)
 import Text.Tbnf.Tree (CompiledTbnf(..),Rule(..),RuleName,ParamName)
 
+import qualified Data.CharSet as CS
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as T
@@ -61,6 +63,7 @@ runReader tbnf inp0 = case go of
 
 parse :: (Stream s) => Rule -> Parse s Texprs
 parse = \case
+  Any -> any
   Sat cs -> satisfy cs
   Many cs -> many cs
   Str str -> string str
@@ -79,6 +82,16 @@ parse = \case
   Capture x g1 g2 -> capture x g1 g2
   Replay x -> replay x
   TexprCombo name -> combo name
+
+any :: (Stream s) => Parse s Texprs
+any = Parse $ \env inp -> case (takeChar CS.any inp, takeTexpr inp) of
+  (Just (c, inp'), _) ->
+    let loc = fwd (location inp) (location inp')
+     in This ([Atom loc (T.singleton c)], inp')
+  (_, Just (t, inp')) -> This ([t], inp')
+  _ -> unParse (throw explain) env inp
+    where
+    explain = (noReason $ location inp){unexpected = Set.singleton "end of input"}
 
 satisfy :: (Stream s) => CharSet -> Parse s Texprs
 satisfy cs = Parse $ \env inp -> case takeChar cs inp of
@@ -196,6 +209,7 @@ combo name = Parse $ \env inp -> case takeTexpr inp of
 
 subst :: (Stream s) => Rule -> Parse s Rule
 subst = \case
+  Any -> pure Any
   Sat cs -> pure $ Sat cs
   Many cs -> pure $ Many cs
   Str txt -> pure $ Str txt

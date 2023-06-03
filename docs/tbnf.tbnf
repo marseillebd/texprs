@@ -121,6 +121,9 @@ Let's begin by defining the smallest possible rules and work up from there.
 - One might sequence many specific characters in a row, i.e. a string.
   These are written inside double-quotes.
   Unlike writing a sequence of isolated (i.e. single-quote) characters, a string is matched as a whole, so errors are reported at the start of the string, even if a prefix matches.
+- One might wish any single input to be present.
+  So far, you might think this is equivalent to `[^]`, but we actualy allow texprs to be consumed as well.
+  Thus, this rule consumes either a single character or texpr.
 - One might also require there to be _no_ characters at a position: that is,
   requiring one has reached the end of input.
   This is written (as in regex) with a dollar sign.
@@ -137,9 +140,10 @@ Let's begin by defining the smallest possible rules and work up from there.
 >   | rule-sat: '[' (pos: Rule.satisfy.part*) ('^' (neg: Rule.satisfy.part*))? ']'
 >   | rule-sat: (pos: (sat-var: enclose.colon<Name.class>))
 >   | rule-string: '\"' chars.dq* '\"'
+>   | rule-any: '.'
 >   | rule-end: '$'
->   | rule-void: '0' colon '\"' chars.dq+ '\"'
 >   | rule-empty: '1'
+>   | rule-void: '0' colon '\"' chars.dq+ '\"'
 
 To match one of a variety of characters, we enclosing the options in square brackets.
 Specifying these options can be done by specifying individual characters,

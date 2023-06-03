@@ -33,22 +33,19 @@
     - [x] and also, tidy up that syntax pLEASE!
   - [ ] primitive grammars
     - 6 columns: Tree.hs, Generic.hs, Define.hs, Compile.hs, Bootstrap.hs, tbnf.tbnf
-    - [x][x][x][x][x][x] shallow Texpr Combo
-      - [x] generalize matching algorithm
-      - [x] implement matching on texpr lists
-    - [x][x][x][x][x][x] Expect
+    - [x] shallow Texpr Combo
+    - [x] Expect
     - [ ][ ][ ][ ][ ][ ] deep Texpr combo
       - '{' lws* Name.ctor (lws* ':' lws+ Rule.Seq)? lws* '}'
     - [ ][ ][ ][ ][ ][ ] deep Texpr atom
       - '{' lws* ':' lws+ Rule lws* '}'
-    - [ ][ ][ ][ ][ ][ ] Intersect
-      - returns the parsed value of the first
-      - the following ones must match the text the first parsed
-    - [ ][ ][ ][ ][ ][ ] Any (char or texpr)
+    - [x] Any (char or texpr)
     - [x] empty sequence
     - [x] Lookahead
     - [x] Not (negative lookahead)
-    - Repeat-Until = (g ?!"msg" g2)*
+    - Repeat-Until === (g ?!"msg" g2)*
+    - [?] Intersect, if I can figure out what the second grammar should match against
+      - alternately, Implies, where the output of the first is passed to the second to match in full, and the final output is the output of the second
   - [ ] simplify/optimize the rules
     - [ ] match many chars in flat mode
     - [ ] un-nest seq and alt

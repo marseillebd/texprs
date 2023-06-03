@@ -47,6 +47,7 @@ data Rule
     -- ^ Fails when the rule matches, otherwise succeed.
     -- Does not consume input or generate texpr output.
     -- Its failure reason is given as and unexpected message, given the 'Text' provided.
+  | Any FwdRange -- ^ accept any single input, whether character or texpr
   | Sat FwdRange (Maybe [SatClass]) [SatClass] -- ^ match a single character when it is in a given class -- TODO fix name
   | Char FwdRange Char -- ^ match a single, specific character
   | Str FwdRange Text -- ^ match a specific string (a sequence of specific characters)

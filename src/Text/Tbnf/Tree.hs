@@ -49,7 +49,8 @@ data CompiledTbnf = Tbnf
     -- this will need the state to hold a map from variables to parse states
     -- oh, it'd be even better if I could do this through a rule call
 data Rule
-  = Sat CharSet
+  = Any
+  | Sat CharSet
   | Many CharSet -- ^ just an efficient synonym for a flattened sequence of singleton char sets
   | Str Text -- ^ just an efficient synonym for a flattened sequence of singleton char sets
   | End

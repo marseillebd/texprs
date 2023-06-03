@@ -129,6 +129,7 @@ compileRule st = \case
     pure $ compileRep g' lo hi
   Lookahead _ g -> Tree.Lookahead <$> compileRule st g
   NegLookahead _ msg g -> Tree.NegLookahead msg <$> compileRule st g
+  Any _ -> pure Tree.Any
   Sat _ Nothing neg -> do
     clsNeg <- mergeEithers $ compileSatisfy st.classes <$> neg
     pure $ Tree.Sat (CS.complement clsNeg)
