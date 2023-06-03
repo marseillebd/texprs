@@ -77,6 +77,7 @@ cleanKeywords (Combo l ctor ((cleanKeywords <$>) -> ts0)) = Combo l ctor (go cto
   go "rule-end" [Kw "$"] = []
   go "rule-expect" (rule : Kw "??" : Kw "\"" : (unsnoc -> Just (msg, Kw "\""))) = (rule : msg)
   go "rule-flat" (Kw "/" : (unsnoc -> Just (ts, Kw "/"))) = ts
+  go "rule-lookahead-neg" [Kw "?!", Kw "\"", msg, Kw "\"", t] = [msg, t]
   go "rule-lookahead-pos" [Kw "?=", t] = [t]
   go "rule-group" (Kw "(" : (unsnoc -> Just (ts, Kw ")"))) = ts
   go "rule-parametric" (f : Kw "<" : (unsnoc -> Just (ts, Kw ">"))) = f : concatMap cleanComma ts
@@ -167,6 +168,8 @@ parseRule (Combo l "rule-end" []) = End l
 parseRule (Combo l "rule-expect" (g : msg)) = Expect l (parseRule g) (T.pack $ concatMap parseStr msg)
 parseRule (Combo l "rule-flat" [g]) = Flat l $ parseRule g
 parseRule (Combo _ "rule-group" [g]) = parseRule g
+parseRule (Combo l "rule-lookahead-neg" [Combo _ "msg" msg, g])
+  = NegLookahead l (T.pack $ concatMap parseStr msg) (parseRule g)
 parseRule (Combo l "rule-lookahead-pos" [g]) = Lookahead l $ parseRule g
 parseRule (Combo l "rule-rep" [g, amt]) = Rep l (parseRule g) (parseAmount amt)
   where

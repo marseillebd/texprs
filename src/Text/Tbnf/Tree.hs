@@ -53,12 +53,13 @@ data Rule
   | Many CharSet -- ^ just an efficient synonym for a flattened sequence of singleton char sets
   | Str Text -- ^ just an efficient synonym for a flattened sequence of singleton char sets
   | End
-  | Void Text -- ^ includes a message
+  | Void Text -- ^ includes a message describing expected input
   | Alt2 Rule Rule
   | Empty
   | Seq2 Rule Rule
   | Star Rule
   | Lookahead Rule
+  | NegLookahead Text Rule -- ^ includes a message describing expected input
   | Ctor CtorName Rule
   | Flat Rule
   | Expect Rule Text

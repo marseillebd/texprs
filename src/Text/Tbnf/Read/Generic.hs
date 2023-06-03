@@ -71,6 +71,7 @@ parse = \case
   Seq2 g1 g2 -> sequence g1 g2
   Star g -> star g
   Lookahead g -> lookahead g
+  NegLookahead msg g -> negLookahead msg g
   Ctor name g -> ctor name g
   Flat g -> flat g
   Expect g msg -> expect g msg
@@ -135,6 +136,14 @@ star g = do
 lookahead :: (Stream s) => Rule -> Parse s Texprs
 lookahead g = restoringInput $ [] <$ parse g
 
+negLookahead :: (Stream s) => Text -> Rule -> Parse s Texprs
+negLookahead msg g = do
+  catch (restoringInput $ parse g) >>= \case
+    Left _ -> pure []
+    Right _ -> do
+      inp <- getInput
+      throw (noReason $ location inp){unexpected = Set.singleton msg}
+
 ctor :: (Stream s) => CtorName -> Rule -> Parse s Texprs
 ctor name g = do
   (r, ts) <- withRange $ parse g
@@ -197,6 +206,7 @@ subst = \case
   Seq2 g1 g2 -> Seq2 <$> subst g1 <*> subst g2
   Star g -> Star <$> subst g
   Lookahead g -> Lookahead <$> subst g
+  NegLookahead msg g -> NegLookahead msg <$> subst g
   Ctor name g -> Ctor name <$> subst g
   Flat g -> Flat <$> subst g
   Expect g msg -> flip Expect msg <$> subst g

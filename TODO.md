@@ -47,9 +47,7 @@
     - [ ][ ][ ][ ][ ][ ] Any (char or texpr)
     - [x] empty sequence
     - [x] Lookahead
-    - [ ][ ][ ][ ][ ][ ] Not (negative lookahead)
-      - takes a message and a rule, fails with message when rule matches
-        otherwise backtracks
+    - [x] Not (negative lookahead)
     - Repeat-Until = (g ?!"msg" g2)*
   - [ ] simplify/optimize the rules
     - [ ] match many chars in flat mode

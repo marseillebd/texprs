@@ -203,6 +203,7 @@ TODO: gotta document another layer of operator precedence v.v
 
 > Rule.Factor<f>
 >   = rule-lookahead-pos: "?=" lws* Rule.Rep<f>
+>   | rule-lookahead-neg: "?!" lws* '\"' (msg: chars.dq*) '\"' lws+ Rule.Rep<f>
 >   | Rule.Rep<f>
 
 Our next operator is sequencing, which is marked simply by separating grammars with whitespace.
