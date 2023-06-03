@@ -86,7 +86,7 @@ parse = \case
   TexprCombo name g -> combo name g
 
 any :: (Stream s) => Parse s Texprs
-any = Parse $ \env inp -> case (takeChar CS.any inp, takeTexpr inp) of
+any = Parse $ \_ inp -> case (takeChar CS.any inp, takeTexpr inp) of
   (Just (c, inp'), _) ->
     let loc = fwd (location inp) (location inp')
      in This ([Atom loc (T.singleton c)], inp')
@@ -96,7 +96,7 @@ any = Parse $ \env inp -> case (takeChar CS.any inp, takeTexpr inp) of
     explain = (noReason $ location inp){unexpected = Set.singleton "end of input"}
 
 satisfy :: (Stream s) => CharSet -> Parse s Texprs
-satisfy cs = Parse $ \env inp -> case takeChar cs inp of
+satisfy cs = Parse $ \_ inp -> case takeChar cs inp of
   Just (c, inp') ->
     let loc = fwd (location inp) (location inp')
      in This ([Atom loc (T.singleton c)], inp')
@@ -110,7 +110,7 @@ many cs = Parse $ \_ inp ->
    in This ([Atom loc txt], inp')
 
 string :: (Stream s) => Text -> Parse s Texprs
-string str = Parse $ \env inp -> case stripStringPrefix str inp of
+string str = Parse $ \_ inp -> case stripStringPrefix str inp of
   Just inp' ->
     let loc = fwd (location inp) (location inp')
      in This ([Atom loc str], inp')
@@ -118,13 +118,13 @@ string str = Parse $ \env inp -> case stripStringPrefix str inp of
     where explain = (noReason $ location inp){expectingKeywords = Set.singleton str}
 
 end :: (Stream s) => Parse s Texprs
-end = Parse $ \env inp -> case isAtEnd inp of
+end = Parse $ \_ inp -> case isAtEnd inp of
   True -> This ([], inp)
   False -> That explain
     where explain = (noReason $ location inp){expectingEndOfInput = True}
 
 void :: (Stream s) => Text -> Parse s Texprs
-void msg = Parse $ \env inp ->
+void msg = Parse $ \_ inp ->
   let explain = (noReason $ location inp){unexpected = Set.singleton msg}
    in That explain
 

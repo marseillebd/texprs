@@ -172,7 +172,7 @@ In fact, that is just what the `rule-call: …` alternative states.
 >   = rule-group: enclose.parens<Rule.allowFlat>
 >   | rule-call: Name.rule enclose.angles<sep.comma<Rule.allowFlat>>?
 >   | rule-flat: f
->   | rule-combo: enclose.braces<Name.ctor>
+>   | rule-combo: enclose.braces<Name.ctor (lws* ':' lws+ Rule.Seq<f>)?>
 >   | Rule.prim
 >
 > Rule.Flat = enclose<'/', Rule.disallowFlat, '/'>
