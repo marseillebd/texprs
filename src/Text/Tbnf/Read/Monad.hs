@@ -17,7 +17,6 @@ module Text.Tbnf.Read.Monad
   , lookupGlobal
   , lookupLocal
   , lookupCapture
-  , ErrorState(..)
   , ReaderError(..)
   , noReason
   ) where
@@ -39,7 +38,7 @@ import qualified Data.Set as Set
 
 ------ The Monad ------
 
-newtype Parse s a = Parse { unParse :: Env -> s -> These (a, s) (ErrorState s) }
+newtype Parse s a = Parse { unParse :: Env -> s -> These (a, s) ReaderError }
 
 data Env = Env
   { global :: Map RuleName ([ParamName], Rule)
@@ -71,13 +70,13 @@ instance (Stream s) => Monad (Parse s) where
       These ok err' -> These ok (err <> err')
 
 
-catch :: (Stream s) => Parse s a -> Parse s (Either (ErrorState s) a)
+catch :: (Stream s) => Parse s a -> Parse s (Either ReaderError a)
 catch action = Parse $ \env inp -> case unParse action env inp of
   This (ok, inp') -> This (Right ok, inp')
   That err -> These (Left err, inp) err
   These (ok, inp') err -> These (Right ok, inp') err
 
-mapErr :: (Stream s) => Parse s a -> (ErrorState s -> ErrorState s) -> Parse s a
+mapErr :: (Stream s) => Parse s a -> (ReaderError -> ReaderError) -> Parse s a
 mapErr action f = Parse $ \env inp -> second f $ unParse action env inp
 
 getInput :: (Stream s) => Parse s s
@@ -100,8 +99,7 @@ withRange action = do
   pure (fwd p0 p', x)
 
 throw :: (Stream s) => ReaderError -> Parse s a
-throw reason = Parse $ \_ remaining -> That $
-  Err { reason, remaining }
+throw reason = Parse $ \_ _ -> That reason
 
 withCall :: (Stream s) => Map ParamName Rule -> Parse s a -> Parse s a
 withCall local action = Parse $ \env inp -> unParse action env{local,captures=Map.empty} inp
@@ -151,20 +149,6 @@ class Stream s where
   isAtEnd :: s -> Bool
 
 ------------------ Errors ------------------
-
--- | Report an error while reading input.
--- For internal use during parsing.
-data ErrorState s = Err
-  { reason :: ReaderError -- ^ explain why the error occurred (i.e. what was expected or unexpected?)
-  , remaining :: s -- ^ input remaining after error
-  }
-  deriving (Show)
-
-instance (Stream s) => Semigroup (ErrorState s) where
-  a <> b = case location a.remaining `compare` location b.remaining of
-    GT -> a
-    EQ -> a{reason = a.reason <> b.reason}
-    LT -> b
 
 -- | Explanation for why a 'ReaderError' occurred.
 -- I.e. what input was expected or unexpected at what position?

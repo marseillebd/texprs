@@ -28,6 +28,8 @@ module Text.Tbnf.Read.Generic
   , Stream(..)
   ) where
 
+import {-# SOURCE #-} qualified Text.Tbnf.Read.Texpr as Texpr
+
 import Prelude hiding (any,fail,sequence)
 
 import Text.Tbnf.Read.Monad
@@ -53,7 +55,7 @@ runReader :: (Stream s)
   -> Either ReaderError (Texprs, s) -- ^ result with remaining input
 runReader tbnf inp0 = case go of
   This ok -> Right ok
-  That err -> Left err.reason
+  That err -> Left err
   These ok _ -> Right ok
   where
   go = unParse (parse tbnf.startRule) env0 inp0
@@ -81,7 +83,7 @@ parse = \case
   Call f gs -> call f gs
   Capture x g1 g2 -> capture x g1 g2
   Replay x -> replay x
-  TexprCombo name -> combo name
+  TexprCombo name g -> combo name g
 
 any :: (Stream s) => Parse s Texprs
 any = Parse $ \env inp -> case (takeChar CS.any inp, takeTexpr inp) of
@@ -89,7 +91,7 @@ any = Parse $ \env inp -> case (takeChar CS.any inp, takeTexpr inp) of
     let loc = fwd (location inp) (location inp')
      in This ([Atom loc (T.singleton c)], inp')
   (_, Just (t, inp')) -> This ([t], inp')
-  _ -> unParse (throw explain) env inp
+  _ -> That explain
     where
     explain = (noReason $ location inp){unexpected = Set.singleton "end of input"}
 
@@ -98,7 +100,7 @@ satisfy cs = Parse $ \env inp -> case takeChar cs inp of
   Just (c, inp') ->
     let loc = fwd (location inp) (location inp')
      in This ([Atom loc (T.singleton c)], inp')
-  Nothing -> unParse (throw explain) env inp
+  Nothing -> That explain
     where explain = (noReason $ location inp){expectingChars = cs} -- WARNING I'm assuming cs is a non-empty set
 
 many :: (Stream s) => CharSet -> Parse s Texprs
@@ -112,19 +114,19 @@ string str = Parse $ \env inp -> case stripStringPrefix str inp of
   Just inp' ->
     let loc = fwd (location inp) (location inp')
      in This ([Atom loc str], inp')
-  Nothing -> unParse (throw explain) env inp
+  Nothing -> That explain
     where explain = (noReason $ location inp){expectingKeywords = Set.singleton str}
 
 end :: (Stream s) => Parse s Texprs
 end = Parse $ \env inp -> case isAtEnd inp of
   True -> This ([], inp)
-  False -> unParse (throw explain) env inp
+  False -> That explain
     where explain = (noReason $ location inp){expectingEndOfInput = True}
 
 void :: (Stream s) => Text -> Parse s Texprs
 void msg = Parse $ \env inp ->
   let explain = (noReason $ location inp){unexpected = Set.singleton msg}
-   in unParse (throw explain) env inp
+   in That explain
 
 alternate :: (Stream s) => Rule -> Rule -> Parse s Texprs
 alternate g1 g2 = do
@@ -170,11 +172,8 @@ flat g = do
 expect :: (Stream s) => Rule -> Text -> Parse s Texprs
 expect g msg = do
   inp0 <- getInput
-  parse g `mapErr` \err -> Err
-    { remaining = inp0
-    , reason = (noReason $ location inp0)
-                {expectingByName = Map.singleton msg err.reason}
-    }
+  parse g `mapErr` \err ->
+    (noReason $ location inp0){expectingByName = Map.singleton msg err}
 
 call :: (Stream s) => RuleName -> [Rule] -> Parse s Texprs
 call f args = lookupLocal f >>= \case
@@ -200,12 +199,32 @@ replay x = lookupCapture x >>= \case
   Just str -> string str
   Nothing -> errorWithoutStackTrace  $ "internal Texpr-Peg error: unbound capture " ++ show x
 
-combo :: (Stream s) => CtorName -> Parse s Texprs
-combo name = Parse $ \env inp -> case takeTexpr inp of
-  Just (t@(Combo _ name' _), inp') | name == name' -> This ([t], inp')
+combo :: (Stream s) => CtorName -> Maybe Rule -> Parse s Texprs
+combo name g_m = Parse $ \env inp -> case takeTexpr inp of
+  Just (t@(Combo l name' children), inp') | name == name' -> case g_m of
+    Nothing -> This ([t], inp')
+    Just g -> case wrapParser g env (Texpr.Input l.anchor children) of
+      This ok -> This ([Combo l name' ok], inp')
+      That err -> That err
+      These ok err -> These ([Combo l name' ok], inp') err
   _ ->
     let explain = (noReason $ location inp){expectingCtors = Set.singleton name}
-     in unParse (throw explain) env inp
+     in That explain
+  where
+  wrapParser g env children = case unParse (parse g) env children of
+    This (ok, Texpr.Input{Texpr.toks=[]}) -> This ok
+    This (_, Texpr.Input{Texpr.loc}) ->
+      let explain = moreChildrenErr loc
+       in That explain
+    That err -> That err
+    These (ok, Texpr.Input{Texpr.toks=[]}) err -> These ok err
+    These (_, Texpr.Input{Texpr.loc}) _ ->
+      let explain = moreChildrenErr loc
+       in That explain
+  moreChildrenErr loc = (noReason loc)
+    { expectingByName = Map.singleton "end of children" $
+      (noReason loc){expectingEndOfInput = True}
+    }
 
 subst :: (Stream s) => Rule -> Parse s Rule
 subst = \case
@@ -232,4 +251,4 @@ subst = \case
   Replay x -> lookupCapture x >>= \case
     Just txt -> pure $ Str txt
     Nothing -> errorWithoutStackTrace  $ "internal Texpr-Peg error: unbound capture " ++ show x
-  TexprCombo name -> pure $ TexprCombo name
+  TexprCombo name g -> TexprCombo name <$> (mapM subst g)

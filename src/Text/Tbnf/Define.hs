@@ -57,7 +57,7 @@ data Rule
   | Flat FwdRange Rule -- ^ whatever texprs are formed by the rule matching, flatten the result into a single atom
   | Call FwdRange RuleName [Rule] -- ^ call a rule, use a parameter, or replay a named capture
   | Ctor FwdRange CtorName Rule -- ^ whatever texprs match the rule, package them into a combination with the given name
-  | TexprCombo FwdRange CtorName -- ^ match a single texpr which is a combo with the given constructor
+  | TexprCombo FwdRange CtorName (Maybe Rule) -- ^ match a single texpr which is a combo with the given constructor, and then match the rule agaisnt its children
   deriving (Show)
 
 -- | The abstract syntax defining character sets for the 'Sat' and 'SatNeg' constructors.

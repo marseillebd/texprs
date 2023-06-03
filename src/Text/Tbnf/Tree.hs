@@ -67,7 +67,7 @@ data Rule
   | Call RuleName [Rule] -- lookup a binding in the current environment and match it
   | Capture ParamName Rule Rule -- i.e. capture string as the text matching Rule₁ and use that binding in Rule₂
   | Replay ParamName -- rather than calling, so we don't have to save an environment
-  | TexprCombo CtorName -- ^ match a texpr which is a combo with the given tag
+  | TexprCombo CtorName (Maybe Rule) -- ^ match a texpr which is a combo with the given tag, and match the children against the rule
   deriving (Show,Eq)
 
 pattern Alt :: [Rule] -> Rule

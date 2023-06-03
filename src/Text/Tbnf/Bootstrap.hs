@@ -163,7 +163,7 @@ parseRule (Combo l "rule-call" (Atom _ f : args)) = Call l (fromString $ T.unpac
 parseRule (Combo l "rule-capture" [(Atom _ name), capture, scope])
     = Cap l (fromString $ T.unpack name) (parseRule capture) (parseRule scope)
 parseRule (Combo l "rule-char" [c]) = Char l $ parseChar c
-parseRule (Combo _ "rule-combo" [Atom l ctor]) = TexprCombo l (fromString $ T.unpack ctor)
+parseRule (Combo _ "rule-combo" [Atom l ctor]) = TexprCombo l (fromString $ T.unpack ctor) Nothing
 parseRule (Combo _ "rule-ctor" [Atom l ctor, g]) = Ctor l (fromString $ T.unpack ctor) $ parseRule g
 parseRule (Combo l "rule-empty" []) = Empty l
 parseRule (Combo l "rule-end" []) = End l

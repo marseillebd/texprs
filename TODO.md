@@ -35,10 +35,12 @@
     - 6 columns: Tree.hs, Generic.hs, Define.hs, Compile.hs, Bootstrap.hs, tbnf.tbnf
     - [x] shallow Texpr Combo
     - [x] Expect
-    - [ ][ ][ ][ ][ ][ ] deep Texpr combo
+    - [x][x][x][x][ ][ ] deep Texpr combo
       - '{' lws* Name.ctor (lws* ':' lws+ Rule.Seq)? lws* '}'
+      - [ ] implement intoTexpr
     - [ ][ ][ ][ ][ ][ ] deep Texpr atom
       - '{' lws* ':' lws+ Rule lws* '}'
+      - [ ] implement intoTexpr
     - [x] Any (char or texpr)
     - [x] empty sequence
     - [x] Lookahead
