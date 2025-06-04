@@ -1,0 +1,80 @@
+:ascii.control: = '\0'..'\x19'
+
+:ascii.digit: = '0'..'9'
+
+:ascii.ident:
+  # the basics
+  = 'a'..'z' | 'A'..'Z' | '0'..'9'
+  # typography
+  | '_'
+:ascii.ident.non-start: = :ascii.digit:
+
+:string.dq.delim: = '\"' | '`'
+:string.dq.control: = :ascii.control: | :string.dq.delim: | '\\'
+
+
+#convention: rule in the `line`, `token`, `comment` namespaces start with constructors for all alternatives…
+#…other namespaces do not
+
+
+start = line.shebang? line* $
+
+line
+  = line.pragma
+  | line.blank
+  | line.std
+
+line.shebang = shebang: "#!" /[^'\n']*/ eol
+line.pragma = pragma: "#:" /[^'\n']*/ eol
+
+line.std = line: token<"">+ comment? eol
+
+
+block<old_depth>
+  = @depth= (indent-ws: /old_depth lws/)
+    line.block.nonEmpty<depth> (eol (indent-ws: depth) line.block<depth>)*
+
+line.block<depth>
+  = line.blank
+  | line.block.nonEmpty<depth>
+line.block.nonEmpty<depth> = line: token<depth>+ comment?
+
+
+line.blank = blank-line: (ws: lws)? comment? eol
+
+token<depth>
+  = STRING: :string.dq.delim: token.string<depth>* :string.dq.delim:
+  # | FLOAT:
+  | INT: integer.decimal
+  | indent:
+    ':' (ws: lws)? comment? eol
+    line.blank*
+    (block: block<depth>)
+  | SEP: ['.' ',' '|']
+  | OPEN: ['(' '[' '{']
+  | CLOSE: [')' ']' '}']
+  | ID: / [:ascii.ident: ^ :ascii.ident.non-start:] :ascii.ident:* /
+  | ws: lws
+  | ws: comment? newline /depth lws/
+
+token.string<depth>
+  = /[^:string.dq.control:]/+
+  # TODO escape sequences
+  # TODO backslash-delimited line break
+
+
+integer.decimal
+  = ['+' '-']? /:ascii.digit:+/
+
+lws
+  = ws
+  | line-continue: "\\\n" # TODO and make sure there's enough indent
+
+
+comment = comment: '#' /[^'\n']*/
+
+ws = /[' ']+/
+
+newline = '\n'
+
+eol = eol: newline | $

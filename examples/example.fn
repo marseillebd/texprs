@@ -1,0 +1,6 @@
+fn const(x, y):
+  if:
+    y
+    x
+
+hello
