@@ -1,7 +1,7 @@
 # texprs
 
 [Hackage](https://hackage.haskell.org/package/texprs)
-[Github](https://github.com/edemko/texprs)
+[Github](https://github.com/marseillebd/texprs)
 
 T-expressions (or t-expr/texpr for short) are a variation on s-expressions
 where every combination receives an explicit constructor.

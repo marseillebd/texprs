@@ -4,8 +4,8 @@ version: 0.0.1.0
 -- synopsis: 
 -- description:
 category: Text
-homepage: https://github.com/edemko/texprs
-bug-reports: https://github.com/edemko/texprs/issues
+homepage: https://github.com/marseillebd/texprs
+bug-reports: https://github.com/marseillebd/texprs/issues
 author: Marseille Bouchard
 maintainer: zankoku.okuno@gmail.com
 copyright: 2023 Marseille Bouchard
@@ -15,7 +15,7 @@ extra-source-files: README.md, CHANGELOG.md, docs/tbnf.tbnf
 
 source-repository head
   type: git
-  location: https://github.com/edemko/texprs
+  location: https://github.com/marseillebd/texprs
 
 library
   hs-source-dirs: src
